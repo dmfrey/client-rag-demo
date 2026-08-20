@@ -56,6 +56,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-liquibase-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	// TestRestTemplate lives here as of Boot 4.1's client-module split, not in spring-boot-test.
+	testImplementation 'org.springframework.boot:spring-boot-resttestclient'
 
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'

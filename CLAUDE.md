@@ -65,6 +65,8 @@ If `docker.sock` isn't routed to Podman (no `podman-mac-helper`, or on Linux wit
 
 Rootless Podman can't run Ryuk (Testcontainers' privileged cleanup-reaper container), so it's disabled for every developer via `environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'` on the `test` task in `backend/build.gradle`. Testcontainers 2.x reads this only from the environment — the older `ryuk.disabled` properties-file key (`testcontainers.properties`) has no effect and was removed from this project.
 
+`TestRestTemplate` moved out of `spring-boot-test` as part of Boot 4.1's HTTP-client module split — it now lives in `org.springframework.boot.resttestclient.TestRestTemplate` (artifact `spring-boot-resttestclient`, added as a `testImplementation` in `backend/build.gradle`), and needs `@AutoConfigureTestRestTemplate` explicitly on the test class (it's no longer auto-wired just from `@SpringBootTest(webEnvironment = RANDOM_PORT)`). See `users/adapter/in/endpoint/AuthControllerIT` for the pattern.
+
 ### Running the Backend
 
 ```bash
@@ -135,7 +137,7 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 
 **Input Adapters** (`adapter/in/`):
 - Thin — delegate all work to input port interfaces; contain no business logic
-- Current type: `endpoint` (REST via Spring MVC)
+- Types so far: `endpoint` (REST via Spring MVC), `security` (Spring Security SPI implementations, e.g. a `UserDetailsService` that's "driven" by the framework rather than by HTTP — see `users/adapter/in/security/`)
 
 **Output Adapters** (`adapter/out/`):
 - Implement output port interfaces; encapsulate the output technology
