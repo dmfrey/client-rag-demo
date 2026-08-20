@@ -9,14 +9,17 @@
 spring:
   ai:
     ollama:
-      # llama3.2:1b is what TestcontainersConfiguration's OllamaContainer actually pulls -
-      # the production default (application.yml) is a much larger real chat model that won't
-      # exist in the test container.
+      # llama3.2:1b is configured as the intended test chat model, but TestcontainersConfiguration's
+      # OllamaContainer does not actually pull it yet (no feature has exercised the chat model
+      # against Testcontainers so far) - any test that triggers a real chat call will fail until
+      # that pull is added. The production default (application.yaml) is a much larger real chat
+      # model that won't exist in the test container either way.
       chat:
         model: llama3.2:1b
       # Must match production's model (nomic-embed-text, 768-dim) exactly, not just be "small" -
       # the dimension is baked into vector_store's embedding vector(768) column, so a different
-      # embedding model here would fail on every insert with a dimension mismatch.
+      # embedding model here would fail on every insert with a dimension mismatch. This one IS
+      # pulled by TestcontainersConfiguration's OllamaContainer.
       embedding:
         model: nomic-embed-text
     vectorstore:

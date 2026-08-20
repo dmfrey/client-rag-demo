@@ -95,7 +95,7 @@ Single-page app, one cohesive shell after login (not separate top-level pages):
 
 ## Remaining open items (implementation-level, low-stakes)
 
-- Chunking strategy/size for the pgvector splitter.
-- Retry behavior for a `FAILED` document (re-upload only, or an explicit retry action).
-- Password hashing scheme (BCrypt is the Spring Security default and is the expected choice).
+- Retry behavior for a `FAILED` document — currently re-upload only (raw file bytes aren't persisted anywhere after processing, so there's no server-side "retry" action; re-uploading the same filename re-triggers ingestion via the normal refresh path).
 - Exact polling interval for document status vs. moving to SSE/WebSocket later if polling feels laggy.
+
+Resolved during implementation: chunking uses Spring AI's `TokenTextSplitter` with its stock defaults (no custom chunk size tuned yet); password hashing is BCrypt via Spring Security's `PasswordEncoder`; all three content types (PDF, DOCX, TXT) go through one `spring-ai-tika-document-reader`-based reader — its bundled Tika standard-parsers package covers PDF and Microsoft Office formats on its own, so the earlier PDF-specific reader was removed as redundant rather than kept alongside it.

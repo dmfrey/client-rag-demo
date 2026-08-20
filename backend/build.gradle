@@ -32,7 +32,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 
 	// Spring AI dependencies
-	implementation 'org.springframework.ai:spring-ai-pdf-document-reader'
+	// tika-document-reader's transitive tika-parsers-standard-package covers PDF and Microsoft
+	// Office parsing on its own (Tika bundles Apache PDFBox and POI), so this is the one reader
+	// used for every accepted document type (PDF, DOCX, TXT) - no separate PDF-specific reader.
+	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
 	implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
 	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'

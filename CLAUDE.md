@@ -67,6 +67,8 @@ Rootless Podman can't run Ryuk (Testcontainers' privileged cleanup-reaper contai
 
 `TestRestTemplate` moved out of `spring-boot-test` as part of Boot 4.1's HTTP-client module split — it now lives in `org.springframework.boot.resttestclient.TestRestTemplate` (artifact `spring-boot-resttestclient`, added as a `testImplementation` in `backend/build.gradle`), and needs `@AutoConfigureTestRestTemplate` explicitly on the test class (it's no longer auto-wired just from `@SpringBootTest(webEnvironment = RANDOM_PORT)`). See `users/adapter/in/endpoint/AuthControllerIT` for the pattern.
 
+`TestcontainersConfiguration`'s `OllamaContainer` eagerly starts and pulls `nomic-embed-text` (see the bean method) so ingestion tests can call a real embedding model rather than mocking the vector store boundary. If that pull fails with `x509: certificate signed by unknown authority`, it's a TLS-inspecting proxy on the network (this project has hit that with the Symantec WSS Agent) re-signing HTTPS to `registry.ollama.ai` with a CA the container doesn't trust — disable whatever's doing the inspection and retry; it's not a code problem. `execInContainer`'s result is checked for a non-zero exit code deliberately — it does not throw on pull failure, so a silent ignore there masked this exact failure the first time.
+
 ### Running the Backend
 
 ```bash
@@ -141,7 +143,7 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 
 **Output Adapters** (`adapter/out/`):
 - Implement output port interfaces; encapsulate the output technology
-- Current type: `persistence` (Spring Data JDBC)
+- Types so far: `persistence` (Spring Data JDBC), `vectorstore` (Spring AI's `VectorStore`/pgvector — chunking, embedding, filtered delete; see `documents/adapter/out/vectorstore/`), `async` (dispatches to a background executor rather than blocking the caller — the in-process stand-in for a message queue; see `documents/adapter/out/async/`)
 
 **Feature Configuration** (`<feature>/configuration/`):
 - Feature-scoped `@Configuration` only

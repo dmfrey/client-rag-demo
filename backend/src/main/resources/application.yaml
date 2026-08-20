@@ -12,18 +12,18 @@ spring:
     ollama:
       chat:
         # Deploy-time default - override via SPRING_AI_OLLAMA_CHAT_MODEL for the real Ollama
-        # instance. Not model-quality-critical: read-only Q&A grounded in retrieved note
+        # instance. Not model-quality-critical: read-only Q&A grounded in retrieved document
         # content favors faithfulness over raw capability.
         model: qwen2.5:7b-instruct
       embedding:
         # Overridable via SPRING_AI_OLLAMA_EMBEDDING_MODEL, but unlike the chat model this one
         # is NOT freely swappable later - its output dimension is baked into vector_store's
-        # embedding vector(768) column at migration time (db/changelog/chat/db.changelog-chat-002.yaml).
-        # Changing it means a schema migration plus a full reindex of every note.
+        # embedding vector(768) column at migration time (db/changelog/documents/db.changelog-documents-002.yaml).
+        # Changing it means a schema migration plus a full reindex of every document.
         model: nomic-embed-text
     vectorstore:
       pgvector:
-        # Liquibase owns the vector_store schema (db/changelog/chat/) - don't let
+        # Liquibase owns the vector_store schema (db/changelog/documents/) - don't let
         # PgVectorStore create/alter it itself.
         initialize-schema: false
 
