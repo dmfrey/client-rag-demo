@@ -1,7 +1,6 @@
 package com.example.clientragdemo.documents.adapter.in.endpoint;
 
 import com.example.clientragdemo.documents.application.domain.model.Document;
-import com.example.clientragdemo.documents.application.domain.service.DocumentNotFoundException;
 import com.example.clientragdemo.documents.application.port.in.DeleteDocumentUseCase;
 import com.example.clientragdemo.documents.application.port.in.DeleteDocumentUseCase.DeleteDocumentCommand;
 import com.example.clientragdemo.documents.application.port.in.GetDocumentUseCase;
@@ -13,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,7 +24,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -75,16 +72,6 @@ class DocumentController {
     ResponseEntity<Void> delete(@PathVariable Long id) {
         deleteDocumentUseCase.execute(new DeleteDocumentCommand(id));
         return ResponseEntity.noContent().build();
-    }
-
-    @ExceptionHandler(DocumentNotFoundException.class)
-    ResponseEntity<Map<String, String>> handleNotFound(DocumentNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
     }
 
     private static DocumentResponse toResponse(Document document) {

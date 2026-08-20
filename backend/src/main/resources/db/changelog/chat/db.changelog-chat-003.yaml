@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: chat-003-create-chat-message-citations-table
+      author: dfrey
+      comment: >
+        Correlates a stored assistant message to the documents that grounded it. Keyed by
+        (session_id, message_timestamp) rather than a message index, since message_timestamp is
+        the exact value Spring AI's JdbcChatMemoryRepository stamped on the row it persisted
+        (preserved as message metadata under JdbcChatMemoryRepository.CONVERSATION_TS when read
+        back) - stable regardless of how MessageWindowChatMemory's eviction window shifts
+        positions in the visible message list.
+      changes:
+        - createTable:
+            tableName: chat_message_citations
+            columns:
+              - column:
+                  name: id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: message_timestamp
+                  type: timestamp with time zone
+                  constraints:
+                    nullable: false
+              - column:
+                  name: document_id
+                  type: bigint
+              - column:
+                  name: filename
+                  type: varchar(1024)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_chat_message_citations_session_timestamp
+            tableName: chat_message_citations
+            columns:
+              - column:
+                  name: session_id
+              - column:
+                  name: message_timestamp

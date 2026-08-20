@@ -6,7 +6,6 @@ import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent;
 import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent.SourcesEvent;
 import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent.TokenEvent;
 import com.example.clientragdemo.chat.application.domain.model.Citation;
-import com.example.clientragdemo.chat.application.domain.service.ChatSessionNotFoundException;
 import com.example.clientragdemo.chat.application.port.in.CreateChatSessionUseCase;
 import com.example.clientragdemo.chat.application.port.in.CreateChatSessionUseCase.CreateChatSessionCommand;
 import com.example.clientragdemo.chat.application.port.in.GetChatMessagesUseCase;
@@ -20,7 +19,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -68,7 +66,10 @@ class ChatController {
     @GetMapping("/{id}/messages")
     List<ChatMessageResponse> messages(@PathVariable Long id, Authentication authentication) {
         return getChatMessagesUseCase.execute(new GetChatMessagesQuery(id, authentication.getName())).stream()
-                .map(message -> new ChatMessageResponse(message.role().name(), message.content()))
+                .map(message -> new ChatMessageResponse(
+                        message.role().name(),
+                        message.content(),
+                        message.citations().stream().map(ChatController::toCitationResponse).toList()))
                 .toList();
     }
 
@@ -76,11 +77,6 @@ class ChatController {
     Flux<ServerSentEvent<?>> sendMessage(@PathVariable Long id, @RequestBody SendMessageRequest request, Authentication authentication) {
         return sendChatMessageUseCase.execute(new SendChatMessageCommand(id, authentication.getName(), request.content()))
                 .map(ChatController::toServerSentEvent);
-    }
-
-    @ExceptionHandler(ChatSessionNotFoundException.class)
-    ResponseEntity<Map<String, String>> handleNotFound(ChatSessionNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
     }
 
     private static ServerSentEvent<?> toServerSentEvent(ChatStreamEvent event) {
@@ -102,7 +98,7 @@ class ChatController {
 
     record ChatSessionResponse(Long id, String title, Instant createdAt, Instant updatedAt) {}
 
-    record ChatMessageResponse(String role, String content) {}
+    record ChatMessageResponse(String role, String content, List<CitationResponse> citations) {}
 
     record CitationResponse(Long documentId, String filename) {}
 }

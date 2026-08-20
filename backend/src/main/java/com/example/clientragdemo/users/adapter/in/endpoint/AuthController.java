@@ -1,7 +1,6 @@
 package com.example.clientragdemo.users.adapter.in.endpoint;
 
 import com.example.clientragdemo.users.application.domain.model.User;
-import com.example.clientragdemo.users.application.domain.service.UsernameAlreadyTakenException;
 import com.example.clientragdemo.users.application.port.in.GetUserUseCase;
 import com.example.clientragdemo.users.application.port.in.GetUserUseCase.GetUserQuery;
 import com.example.clientragdemo.users.application.port.in.RegisterUserUseCase;
@@ -13,18 +12,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -69,21 +64,6 @@ class AuthController {
     ResponseEntity<UserResponse> me(Authentication authentication) {
         User user = getUserUseCase.execute(new GetUserQuery(authentication.getName()));
         return ResponseEntity.ok(toResponse(user));
-    }
-
-    @ExceptionHandler(UsernameAlreadyTakenException.class)
-    ResponseEntity<Map<String, String>> handleUsernameTaken(UsernameAlreadyTakenException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", ex.getMessage()));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
-    }
-
-    @ExceptionHandler(AuthenticationException.class)
-    ResponseEntity<Map<String, String>> handleAuthenticationFailure() {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid username or password"));
     }
 
     private static UserResponse toResponse(User user) {

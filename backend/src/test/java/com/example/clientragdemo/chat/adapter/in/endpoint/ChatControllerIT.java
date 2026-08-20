@@ -63,9 +63,26 @@ class ChatControllerIT {
         assertThat(messagesResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(List.of(messagesResponse.getBody())).extracting(MessageResponse::role).contains("USER", "ASSISTANT");
 
+        // Citation persistence and title generation both happen as best-effort side effects after
+        // the stream completes (see SendChatMessageService), so poll rather than assert immediately.
         await().atMost(Duration.ofSeconds(30)).until(
                 () -> restTemplate.exchange("/api/chats", HttpMethod.GET, new HttpEntity<>(authHeaders), SessionResponse[].class).getBody(),
                 sessions -> sessions.length == 1 && sessions[0].title() != null);
+
+        await().atMost(Duration.ofSeconds(30)).until(
+                () -> List.of(restTemplate.exchange(
+                        "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class).getBody()),
+                messages -> messages.stream()
+                        .filter(message -> "ASSISTANT".equals(message.role()))
+                        .anyMatch(message -> message.citations() != null && !message.citations().isEmpty()));
+
+        MessageResponse assistantMessage = List.of(restTemplate.exchange(
+                        "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class).getBody())
+                .stream()
+                .filter(message -> "ASSISTANT".equals(message.role()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(assistantMessage.citations()).extracting(CitationResponse::filename).contains(filename);
     }
 
     @Test
@@ -138,7 +155,9 @@ class ChatControllerIT {
 
     private record SessionResponse(Long id, String title, String createdAt, String updatedAt) {}
 
-    private record MessageResponse(String role, String content) {}
+    private record MessageResponse(String role, String content, List<CitationResponse> citations) {}
+
+    private record CitationResponse(Long documentId, String filename) {}
 
     private record UploadResponse(Long id, String filename, String contentType, String status, String errorMessage,
                                    Integer chunkCount, String uploadedBy, String createdAt, String updatedAt) {}

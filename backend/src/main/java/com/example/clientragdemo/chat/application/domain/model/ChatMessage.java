@@ -1,3 +1,6 @@
 package com.example.clientragdemo.chat.application.domain.model;
 
-public record ChatMessage(ChatRole role, String content) {}
+import java.time.Instant;
+import java.util.List;
+
+public record ChatMessage(ChatRole role, String content, Instant timestamp, List<Citation> citations) {}

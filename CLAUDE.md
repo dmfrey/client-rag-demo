@@ -10,7 +10,7 @@ Multi-module application targeting Tanzu Platform deployment:
 ### Backend (`backend/`)
 
 - **Java 25** (toolchain)
-- **Spring Boot 4.1.0** with GraalVM native image (`org.graalvm.buildtools.native`)
+- **Spring Boot 4.1.0** — runs as a regular JVM application/container image for now; GraalVM native image is a deliberately deferred goal, not current behavior (see Build below)
 - **Spring Data JDBC** + **Liquibase** (PostgreSQL)
 - **Spring MVC** (webmvc)
 - **Observability**: Micrometer tracing (Brave bridge), Prometheus, datasource-micrometer
@@ -94,6 +94,8 @@ The backend (`backend/`) follows **Hexagonal Architecture** (Ports and Adapters)
 ```
 com.example.clientragdemo
 ├── configuration/                        ← cross-cutting Spring configuration
+├── shared/                               ← small types multiple features are allowed to depend on
+│   └── exception/                        ← NotFoundException, ConflictException — see Error Handling below
 └── <feature>/                            ← e.g. notes
     ├── adapter/
     │   ├── in/
@@ -109,6 +111,8 @@ com.example.clientragdemo
     │       └── out/                      ← output port interfaces
     └── configuration/                    ← feature-scoped Spring configuration
 ```
+
+`shared/` is a deliberate, narrow exception to "features are self-contained" — it exists only for types that would otherwise force cross-feature imports (see Error Handling). Don't grow it into a dumping ground; a feature-specific type belongs in that feature, not here.
 
 ### Conventions
 
@@ -153,6 +157,11 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 **Root Configuration** (`com.example.clientragdemo.configuration/`):
 - Cross-cutting concerns only (security, observability config, etc.)
 
+**Error Handling**:
+- One global `@RestControllerAdvice` (`configuration/GlobalExceptionHandler`) maps exceptions to HTTP status for every controller — no per-controller `@ExceptionHandler` methods.
+- A feature's "not found" exception extends `shared.exception.NotFoundException` (→ 404); a "conflict" exception (e.g. a uniqueness violation) extends `shared.exception.ConflictException` (→ 409). This is *why* `shared/` is allowed to exist: the global handler only needs to know about these two base types, never about a specific feature's exception class, so a new feature never requires touching it.
+- Plain `IllegalArgumentException` → 400 (input validation in a domain service) and Spring Security's `AuthenticationException` → 401 are handled generically there too.
+
 ### Adding a New Feature
 
 1. Create the package tree under `com.example.clientragdemo.<feature>`
@@ -176,18 +185,23 @@ Several dependencies own tables that need a schema but (correctly) don't manage 
 
 ## Build
 
-### Native Image (CI)
+### Container Image (CI)
 
-The CI workflow builds a native container image via Cloud Native Buildpacks:
+The CI workflow builds a container image via Cloud Native Buildpacks:
 
 ```bash
 ./gradlew :backend:bootBuildImage
 ```
 
+This is a regular JVM-based image today, not a GraalVM native-image binary — `build.gradle` doesn't apply `org.graalvm.buildtools.native`, and no `BP_NATIVE_IMAGE` buildpack environment variable is set. True native image is an explicit future goal (this is a demo app; not worth the build-time/complexity cost until there's a real deployment target driving it), tracked here rather than silently left inconsistent with the tech stack description above.
+
 Registry credentials are passed as Gradle properties (`-PregistryUrl`, `-PregistryUsername`, `-PregistryPassword`).
 
-### GraalVM reflection gaps (known issue class)
+### GraalVM native image (deferred — anticipated issues)
 
+Not started. From prior experience with this stack, expect at least these two to need explicit handling when this work begins (not yet investigated in *this* project — don't treat as confirmed findings):
+- **Liquibase**: needs AOT/reflection hints for changelog parsing and JDBC driver classes to run correctly under `native-image`.
+- **Micrometer observability** (tracing/Prometheus): instrumentation that relies on runtime bytecode generation or reflection typically needs native-image hints too.
 
 ### CI/CD
 
