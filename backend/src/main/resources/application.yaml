@@ -40,6 +40,28 @@ spring:
     virtual:
       enabled: true
 
+  servlet:
+    multipart:
+      # Boot's defaults (1MB/10MB) reject most real PDFs/DOCX outright. 50MB comfortably covers
+      # realistic document uploads; MaxUploadSizeExceededException maps to 413 in
+      # GlobalExceptionHandler rather than the default 500.
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+management:
+  endpoint:
+    health:
+      # Separate /actuator/health/liveness and /actuator/health/readiness groups, matching what
+      # a Kubernetes-based platform (Tanzu) expects to probe.
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        # Deliberately narrow - not "*". Health (for platform probes) and Prometheus (for scraping)
+        # are permitAll in SecurityConfig; nothing else here is exposed or unauthenticated.
+        include: health,prometheus
+
 app:
   cors:
     # Comma-separated origins allowed to call the API with credentials (see SecurityConfig).

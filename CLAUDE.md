@@ -69,6 +69,8 @@ Rootless Podman can't run Ryuk (Testcontainers' privileged cleanup-reaper contai
 
 `TestcontainersConfiguration`'s `OllamaContainer` eagerly starts and pulls `nomic-embed-text` (see the bean method) so ingestion tests can call a real embedding model rather than mocking the vector store boundary. If that pull fails with `x509: certificate signed by unknown authority`, it's a TLS-inspecting proxy on the network (this project has hit that with the Symantec WSS Agent) re-signing HTTPS to `registry.ollama.ai` with a CA the container doesn't trust — disable whatever's doing the inspection and retry; it's not a code problem. `execInContainer`'s result is checked for a non-zero exit code deliberately — it does not throw on pull failure, so a silent ignore there masked this exact failure the first time.
 
+`@SpringBootTest` disables Micrometer metrics export by default (a `DisableMetricsExportContextCustomizer` sets `management.defaults.metrics.export.enabled=false`), which makes `PrometheusMetricsExportAutoConfiguration`'s `@ConditionalOnEnabledMetricsExport` never match — so `/actuator/prometheus` 401s in a test even though `management.endpoints.web.exposure.include` genuinely includes it and production works fine. Add `@AutoConfigureMetrics` (`org.springframework.boot.micrometer.metrics.test.autoconfigure`) to any test that needs to exercise the real Prometheus endpoint; see `configuration/ActuatorSecurityIT`.
+
 ### Running the Backend
 
 ```bash

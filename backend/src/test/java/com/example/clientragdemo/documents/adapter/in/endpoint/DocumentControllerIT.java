@@ -95,6 +95,21 @@ class DocumentControllerIT {
     }
 
     @Test
+    void rejectsUploadsOverTheConfiguredSizeLimit() {
+        byte[] oversized = new byte[200 * 1024]; // test config caps max-file-size at 100KB
+
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", namedResource("too-big.txt", oversized));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.addAll(authHeaders);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        ResponseEntity<String> response = restTemplate.postForEntity("/api/documents", new HttpEntity<>(body, headers), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONTENT_TOO_LARGE);
+    }
+
+    @Test
     void requiresAuthentication() {
         ResponseEntity<String> response = restTemplate.getForEntity("/api/documents", String.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
