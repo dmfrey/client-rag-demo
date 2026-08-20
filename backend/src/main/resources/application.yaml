@@ -40,6 +40,16 @@ spring:
     virtual:
       enabled: true
 
+  docker:
+    compose:
+      # spring-boot-docker-compose is a developmentOnly dependency, but merely being on the
+      # classpath makes Spring Boot try to start Docker Compose unconditionally at startup - with
+      # no compose file at the working directory's default discovery locations, that's a hard
+      # startup failure (IllegalStateException: No Docker Compose file found), not a silent
+      # no-op. Disabled by default; the local profile (application-local.yaml) re-enables it
+      # pointed at the actual compose.yaml location.
+      enabled: false
+
   servlet:
     multipart:
       # Boot's defaults (1MB/10MB) reject most real PDFs/DOCX outright. 50MB comfortably covers

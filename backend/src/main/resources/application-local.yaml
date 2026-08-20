@@ -1,0 +1,8 @@
+spring:
+  docker:
+    compose:
+      enabled: true
+      # bootRun's working directory is backend/, not backend/src/ - compose.yaml isn't at one of
+      # Spring Boot's default discovery locations (compose.yaml/docker-compose.yaml etc. at the
+      # working directory root), so the path has to be given explicitly.
+      file: src/compose.yaml

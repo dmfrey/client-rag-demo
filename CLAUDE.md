@@ -77,7 +77,17 @@ Rootless Podman can't run Ryuk (Testcontainers' privileged cleanup-reaper contai
 SPRING_PROFILES_ACTIVE=local ./gradlew :backend:bootRun
 ```
 
-The `local` profile (`application-local.yaml`) enables Spring Boot Docker Compose with `podman-compose`. Without it, Docker Compose is disabled (required for CI/AOT). Service definitions live in `backend/src/compose.yaml`.
+The `local` profile (`application-local.yaml`) enables Spring Boot Docker Compose (`spring.docker.compose.enabled: true`, pointed at `backend/src/compose.yaml` via `spring.docker.compose.file` — bootRun's working directory is `backend/`, not `backend/src/`, which isn't one of Boot's default compose-file discovery locations) with `podman-compose`. Without the profile, Docker Compose stays disabled — this default matters: merely having `spring-boot-docker-compose` on the classpath (a `developmentOnly` dependency) makes Spring Boot try to start it unconditionally at every startup, and with no compose file at the working directory it's a **hard startup failure** (`IllegalStateException: No Docker Compose file found`), not a silent no-op. `application.yaml` explicitly sets `spring.docker.compose.enabled: false` as the base default for exactly this reason (required for CI/AOT builds, and for running against a manually-provided datasource).
+
+For a one-off manual run against an already-running Postgres and a real (non-Testcontainers) Ollama instance — e.g. the GPU-backed one, see memory — skip the `local` profile and override directly:
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/client_rag_demo \
+SPRING_DATASOURCE_USERNAME=postgres \
+SPRING_DATASOURCE_PASSWORD=postgres \
+SPRING_AI_OLLAMA_BASE_URL=http://<ollama-host>:11434 \
+./gradlew :backend:bootRun
+```
 
 ### Running the Frontend
 
