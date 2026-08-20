@@ -53,12 +53,13 @@ Exact column types/constraints will firm up during implementation; this is the s
 `id`, `filename` (unique — identity for the refresh-by-filename upsert), `content_type`, `status` (`PROCESSING` / `READY` / `FAILED`), `error_message` (nullable), `chunk_count` (nullable until processed), `uploaded_by` → `users.id` (last user to upload/refresh it), `created_at`, `updated_at`
 
 **`chat_sessions`**
-`id`, `owner_id` → `users.id`, `title` (nullable until auto-generated), `created_at`, `updated_at`
+`id`, `owner_username` (denormalized, like `documents.uploaded_by` — keeps the chat feature from taking a DB-level dependency on the users feature's internals), `title` (nullable until auto-generated), `created_at`, `updated_at`
 
 **pgvector `vector_store`** (owned by `spring-ai-starter-vector-store-pgvector`)
 Standard `id`/`content`/`metadata`/`embedding` columns; each chunk's `metadata` carries `document_id` and `filename` so a document's chunks can be found and deleted on refresh/delete, and so a retrieved chunk can be traced back to its source document for citations.
 
-Chat *messages* themselves live in whatever schema `spring-ai-starter-model-chat-memory-repository-jdbc` manages — `chat_sessions` holds the title/owner/timestamps around it, not the messages.
+**`SPRING_AI_CHAT_MEMORY`** (owned by `spring-ai-model-chat-memory-repository-jdbc`, conversation id = chat session id)
+Chat *messages* themselves live here, not in `chat_sessions` — that table holds the title/owner/timestamps around a session, not its messages. Read via Spring AI's `ChatMemory` bean, not a repository we wrote.
 
 ## API (draft)
 

@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: chat-001-create-chat-memory-schema
+      author: dfrey
+      comment: >
+        Schema for spring-ai-model-chat-memory-repository-jdbc, referenced directly from the
+        dependency jar rather than copied here - unlike pgvector-store (whose DDL is generated
+        in Java, not shipped as a file), this module ships real per-vendor .sql schema files.
+        spring.ai.chat.memory.repository.jdbc.initialize-schema is set to never so Spring AI
+        doesn't also try to create this table itself.
+      changes:
+        - sqlFile:
+            path: org/springframework/ai/chat/memory/repository/jdbc/schema-postgresql.sql
+            relativeToChangelogFile: false

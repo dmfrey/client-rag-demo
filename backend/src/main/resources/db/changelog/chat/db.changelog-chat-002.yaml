@@ -1,0 +1,41 @@
+databaseChangeLog:
+  - changeSet:
+      id: chat-002-create-chat-sessions-table
+      author: dfrey
+      changes:
+        - createTable:
+            tableName: chat_sessions
+            columns:
+              - column:
+                  name: id
+                  type: bigint
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: owner_username
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: title
+                  type: varchar(100)
+              - column:
+                  name: created_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_chat_sessions_owner_username
+            tableName: chat_sessions
+            columns:
+              - column:
+                  name: owner_username

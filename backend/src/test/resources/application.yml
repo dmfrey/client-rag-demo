@@ -9,11 +9,9 @@
 spring:
   ai:
     ollama:
-      # llama3.2:1b is configured as the intended test chat model, but TestcontainersConfiguration's
-      # OllamaContainer does not actually pull it yet (no feature has exercised the chat model
-      # against Testcontainers so far) - any test that triggers a real chat call will fail until
-      # that pull is added. The production default (application.yaml) is a much larger real chat
-      # model that won't exist in the test container either way.
+      # llama3.2:1b - small and fast to pull, this is what TestcontainersConfiguration's
+      # OllamaContainer actually pulls for the chat feature's tests. The production default
+      # (application.yaml) is a much larger real chat model that won't exist in the test container.
       chat:
         model: llama3.2:1b
       # Must match production's model (nomic-embed-text, 768-dim) exactly, not just be "small" -
@@ -25,3 +23,8 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: false
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never

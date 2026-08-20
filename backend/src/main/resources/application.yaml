@@ -26,6 +26,15 @@ spring:
         # Liquibase owns the vector_store schema (db/changelog/documents/) - don't let
         # PgVectorStore create/alter it itself.
         initialize-schema: false
+    chat:
+      memory:
+        repository:
+          jdbc:
+            # Liquibase owns the SPRING_AI_CHAT_MEMORY schema (db/changelog/chat/), referencing
+            # this module's own bundled schema-postgresql.sql directly - don't let this
+            # auto-initialize it too. (Default mode is EMBEDDED, which no-ops against a real
+            # Postgres anyway, but being explicit matches the pgvector convention above.)
+            initialize-schema: never
 
   threads:
     virtual:

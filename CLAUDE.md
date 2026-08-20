@@ -143,7 +143,7 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 
 **Output Adapters** (`adapter/out/`):
 - Implement output port interfaces; encapsulate the output technology
-- Types so far: `persistence` (Spring Data JDBC), `vectorstore` (Spring AI's `VectorStore`/pgvector — chunking, embedding, filtered delete; see `documents/adapter/out/vectorstore/`), `async` (dispatches to a background executor rather than blocking the caller — the in-process stand-in for a message queue; see `documents/adapter/out/async/`)
+- Types so far: `persistence` (Spring Data JDBC), `vectorstore` (Spring AI's `VectorStore`/pgvector — chunking, embedding, filtered delete; see `documents/adapter/out/vectorstore/`), `async` (dispatches to a background executor rather than blocking the caller — the in-process stand-in for a message queue; see `documents/adapter/out/async/`), `ai` (Spring AI's `ChatClient` — streaming, RAG grounding via advisors, non-streaming completions; see `chat/adapter/out/ai/`), `chatmemory` (reads Spring AI's `ChatMemory` bean; see `chat/adapter/out/chatmemory/`)
 
 **Feature Configuration** (`<feature>/configuration/`):
 - Feature-scoped `@Configuration` only
@@ -168,6 +168,11 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 ## Database Migrations
 
 Liquibase changelogs live in `backend/src/main/resources/db/changelog/`. The master changelog is `db.changelog-master.yaml`. Add new changesets as separate files and include them from the master.
+
+Several dependencies own tables that need a schema but (correctly) don't manage it themselves against a real Postgres — check before hand-writing DDL:
+- If the owning module ships real per-vendor `.sql` files (e.g. `spring-ai-model-chat-memory-repository-jdbc`'s `schema-postgresql.sql`), reference the file directly from the changelog with a `sqlFile` change pointing at its classpath resource path inside the dependency jar (`db/changelog/chat/db.changelog-chat-001.yaml` is the example) — don't copy its contents in.
+- If it doesn't (e.g. `spring-ai-pgvector-store`'s `PgVectorStore` builds its DDL as Java string templates, not a shipped file), there's nothing to reference; the DDL has to be reconstructed by hand and verified against the library's actual runtime behavior (`db/changelog/documents/db.changelog-documents-002.yaml` is the example — verified by decompiling `PgVectorStore.class`, then confirming a real insert/query/delete against it works end-to-end in `DocumentControllerIT`, not just by starting successfully).
+- Either way, set that dependency's own `initialize-schema` property to disabled (`false` / `never`, whichever it uses) so it doesn't also try to create the table itself.
 
 ## Build
 
