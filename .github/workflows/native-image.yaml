@@ -3,6 +3,12 @@ name: Build and Publish Native Image
 on:
   push:
     branches: [ main ]
+    # Only backend changes (or changes to this workflow itself) need a rebuild - frontend/docs/
+    # manifest-only pushes used to also trigger a full native-image build for no reason, wasting
+    # CI time on an image that ends up byte-identical to the one already published.
+    paths:
+      - 'backend/**'
+      - '.github/workflows/native-image.yaml'
   workflow_dispatch: {}
 
 permissions:
