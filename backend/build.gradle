@@ -39,7 +39,12 @@ dependencies {
 	// used for every accepted document type (PDF, DOCX, TXT) - no separate PDF-specific reader.
 	implementation 'org.springframework.ai:spring-ai-tika-document-reader'
 	implementation 'org.springframework.ai:spring-ai-starter-model-chat-memory-repository-jdbc'
-	implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
+	// OpenAI-compatible client rather than Ollama's native one - used everywhere (local dev,
+	// tests, production), just pointed at a different OpenAI-compatible endpoint per
+	// environment: Ollama exposes one at /v1 alongside its native API, and that's what this
+	// points at locally/in tests (see TestcontainersConfiguration, application-local.yaml);
+	// production points at Tanzu Platform's genai-service marketplace proxy (see manifest.yml).
+	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-vector-store-advisor'
 

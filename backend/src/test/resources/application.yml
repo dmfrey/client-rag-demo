@@ -8,7 +8,10 @@
 # pulls - instead of failing fast, every vector store call 404'd against Ollama).
 spring:
   ai:
-    ollama:
+    openai:
+      # base-url/api-key come from TestcontainersConfiguration's DynamicPropertyRegistrar
+      # (OllamaContainer's /v1 endpoint, no-auth) - not set here since the container's port isn't
+      # known until it starts.
       # llama3.2:1b - small and fast to pull, this is what TestcontainersConfiguration's
       # OllamaContainer actually pulls for the chat feature's tests. The production default
       # (application.yaml) is a much larger real chat model that won't exist in the test container.

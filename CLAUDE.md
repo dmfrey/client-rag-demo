@@ -13,8 +13,9 @@ Multi-module application targeting Tanzu Platform deployment:
 - **Spring Boot 4.1.1** — ships as a GraalVM native-image container image, built via Cloud Native Buildpacks and published to GHCR on every push to `main` (see Build below)
 - **Spring Data JDBC** + **Liquibase** (PostgreSQL)
 - **Spring MVC** (webmvc)
+- **Spring AI** — OpenAI-compatible client (`spring-ai-starter-model-openai`, not Ollama's native client) against whichever OpenAI-compatible endpoint an environment has: Ollama's own `/v1` routes locally and in tests (Ollama exposes these alongside its native API — see Running the Backend and Testcontainers below), Tanzu Platform's `genai-service` marketplace proxy or another OpenAI-compatible endpoint in production (see Deployment below); **pgvector** vector store; JDBC-backed chat memory
 - **Observability**: Micrometer tracing (Brave bridge), Prometheus, datasource-micrometer
-- **Testcontainers**: PostgreSQL
+- **Testcontainers**: PostgreSQL, Ollama
 
 ### Frontend (`frontend/`)
 
@@ -84,13 +85,14 @@ SPRING_PROFILES_ACTIVE=local ./gradlew :backend:bootRun
 
 The `local` profile (`application-local.yaml`) enables Spring Boot Docker Compose (`spring.docker.compose.enabled: true`, pointed at `backend/src/compose.yaml` via `spring.docker.compose.file` — bootRun's working directory is `backend/`, not `backend/src/`, which isn't one of Boot's default compose-file discovery locations) with `podman-compose`. Without the profile, Docker Compose stays disabled — this default matters: merely having `spring-boot-docker-compose` on the classpath (a `developmentOnly` dependency) makes Spring Boot try to start it unconditionally at every startup, and with no compose file at the working directory it's a **hard startup failure** (`IllegalStateException: No Docker Compose file found`), not a silent no-op. `application.yaml` explicitly sets `spring.docker.compose.enabled: false` as the base default for exactly this reason (required for CI/AOT builds, and for running against a manually-provided datasource).
 
-For a one-off manual run against an already-running Postgres and a real (non-Testcontainers) Ollama instance — e.g. the GPU-backed one, see memory — skip the `local` profile and override directly:
+For a one-off manual run against an already-running Postgres and a real (non-Testcontainers) Ollama instance — e.g. the GPU-backed one, see memory — skip the `local` profile and override directly. The app talks to Ollama via its OpenAI-compatible `/v1` routes, not Ollama's native API (see Tech Stack above), so the URL needs that suffix, and `SPRING_AI_OPENAI_API_KEY` needs an explicit empty value (a deliberate no-auth signal, not the same as leaving it unset — see `OpenAiAutoConfigurationUtil` in `spring-ai-openai`):
 
 ```bash
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/client_rag_demo \
 SPRING_DATASOURCE_USERNAME=postgres \
 SPRING_DATASOURCE_PASSWORD=postgres \
-SPRING_AI_OLLAMA_BASE_URL=http://<ollama-host>:11434 \
+SPRING_AI_OPENAI_BASE_URL=http://<ollama-host>:11434/v1 \
+SPRING_AI_OPENAI_API_KEY= \
 ./gradlew :backend:bootRun
 ```
 
@@ -232,7 +234,7 @@ Working, as of the fixes below - all discovered by actually running `processAot`
 - **`processAot` needs a live, reachable database purely because of Spring Data JDBC's dialect auto-detection** (`DataJdbcRepositoriesAutoConfiguration$SpringBootJdbcConfiguration#jdbcDialect`, `@ConditionalOnMissingBean`) - AOT's eager bean-factory introspection instantiates `NamedParameterJdbcOperations` → `dataSource` to query the dialect from a real connection, and does so *before* `@ConfigurationProperties` binding has run for that early pass, so `spring.datasource.*` (env var or `-D`, doesn't matter) is seen as unset and dataSource creation fails with "Failed to determine a suitable driver class" even with a real reachable database and correct properties. Fixed by declaring an explicit `JdbcDialect` bean (`configuration/JdbcDialectConfig`, `JdbcPostgresDialect.INSTANCE` - this app is Postgres-only) so Boot's auto-detecting bean never gets created at all; also removes a real, if small, per-startup DB round trip in production.
 - **Liquibase's changelog parser reflectively invokes each Change/config class's setters (to populate it) and getters (to recompute checksums, on *every* startup, not just the first)** - GraalVM strips unregistered members, so an uncovered type throws `MissingReflectionRegistrationError` at whatever point that type's parsing/checksum path is first hit, which can be startup N, not necessarily startup 1. `configuration/LiquibaseRuntimeHints` registers exactly the change types this project's changelogs use (`createTable`, `createIndex`, `sql`, `sqlFile`) plus their shared superclasses. Add a type there if a new changelog change type is introduced and this error resurfaces.
 - **`org.eclipse.angus:angus-activation`** (pulled in transitively via `jaxb-core`, used by Tika/POI for XML/OOXML parsing, nothing to do with email) **registers a native-image `Feature` that unconditionally references `jakarta.mail.Part`** - without that class on the classpath, native-image generation itself fails with `NoClassDefFoundError` before the app even starts. Fixed with a `runtimeOnly` dependency on just `jakarta.mail:jakarta.mail-api` (API only, no implementation, no functionality used) to satisfy the class lookup.
-- **PDFBox 3.x's `PDDocument` static initializer touches `java.awt.image.ColorModel`/`Raster`** (AWT/Java2D, apparently regardless of whether the PDF or the extraction path involves images at all) **- on macOS specifically, this crashed a directly-invoked (`nativeCompile`) native executable at runtime with `NoSuchFieldError: ColorModel.nBits`**, a JNI field-registration gap in GraalVM's macOS AWT native-image support. Did not reproduce building the same app via Cloud Native Buildpacks (Linux) instead, so treated as a macOS-native-image-only gap, not something this project's production path hits. If it resurfaces on Linux, look at GraalVM's AWT/headless native-image support first.
+- **PDFBox 3.x's `PDDocument` static initializer touches `java.awt.image.ColorModel`/`Raster`** (AWT/Java2D, apparently regardless of whether the PDF or the extraction path involves images at all) **- on macOS specifically, this crashed a directly-invoked (`nativeCompile`) native executable at runtime with `NoSuchFieldError: ColorModel.nBits`**, a JNI field-registration gap in GraalVM's macOS AWT native-image support. Did not reproduce building the same app the way it's actually shipped - via Cloud Native Buildpacks (Linux, see above) - so treated as a macOS-native-image-only gap, not something this project's production path hits. If it resurfaces on Linux, look at GraalVM's AWT/headless native-image support first.
 - Micrometer/Prometheus needed no extra hints - `micrometer-registry-prometheus` is `runtimeOnly` and worked without further changes.
 
 ### CI/CD

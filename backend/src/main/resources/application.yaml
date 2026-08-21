@@ -9,14 +9,20 @@ spring:
     name: client-rag-demo
 
   ai:
-    ollama:
+    openai:
+      # No default - every environment needs an explicit SPRING_AI_OPENAI_BASE_URL (and
+      # SPRING_AI_OPENAI_API_KEY, "" for a no-auth endpoint like Ollama's) pointed at whichever
+      # OpenAI-compatible endpoint it actually has reachable: a local Ollama instance's /v1
+      # routes for manual runs (see CLAUDE.md), Testcontainers' OllamaContainer for tests (see
+      # TestcontainersConfiguration), or Tanzu Platform's genai-service marketplace proxy in
+      # production (see manifest.yml).
       chat:
-        # Deploy-time default - override via SPRING_AI_OLLAMA_CHAT_MODEL for the real Ollama
-        # instance. Not model-quality-critical: read-only Q&A grounded in retrieved document
-        # content favors faithfulness over raw capability.
+        # Deploy-time default - override via SPRING_AI_OPENAI_CHAT_MODEL for a real deployment's
+        # actual model name. Not model-quality-critical: read-only Q&A grounded in retrieved
+        # document content favors faithfulness over raw capability.
         model: qwen2.5:7b-instruct
       embedding:
-        # Overridable via SPRING_AI_OLLAMA_EMBEDDING_MODEL, but unlike the chat model this one
+        # Overridable via SPRING_AI_OPENAI_EMBEDDING_MODEL, but unlike the chat model this one
         # is NOT freely swappable later - its output dimension is baked into vector_store's
         # embedding vector(768) column at migration time (db/changelog/documents/db.changelog-documents-002.yaml).
         # Changing it means a schema migration plus a full reindex of every document.
