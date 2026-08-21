@@ -130,6 +130,14 @@ tasks.named('bootBuildImage') {
 		// non-deprecated flag (confirmed via `native-image --expert-options-all`) for including
 		// every hosted charset rather than registering CP1252 alone and re-discovering the next
 		// missing one whenever some other document's encoding differs.
-		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets',
+		// Apache XMLBeans (used by POI's XWPF/Word parsing specifically - the class chain is
+		// XWPFDocument -> POIXMLDocument.load -> an XMLBeans-generated schema class's <clinit> ->
+		// its regex engine's locale setup) loads a ResourceBundle of error-message strings that
+		// GraalVM doesn't include by default either - a genuinely different native-image gap from
+		// the charset one above (ResourceBundle inclusion, not Charset provider inclusion),
+		// discovered only by a real .docx upload crashing with MissingResourceException. Only this
+		// one exact bundle is registered since it's the only one actually observed failing - add
+		// more here (comma-separated per -H:IncludeResourceBundles) if another one surfaces.
+		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message',
 	]
 }
