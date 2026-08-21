@@ -71,6 +71,10 @@ Rootless Podman can't run Ryuk (Testcontainers' privileged cleanup-reaper contai
 
 `@SpringBootTest` disables Micrometer metrics export by default (a `DisableMetricsExportContextCustomizer` sets `management.defaults.metrics.export.enabled=false`), which makes `PrometheusMetricsExportAutoConfiguration`'s `@ConditionalOnEnabledMetricsExport` never match — so `/actuator/prometheus` 401s in a test even though `management.endpoints.web.exposure.include` genuinely includes it and production works fine. Add `@AutoConfigureMetrics` (`org.springframework.boot.micrometer.metrics.test.autoconfigure`) to any test that needs to exercise the real Prometheus endpoint; see `configuration/ActuatorSecurityIT`.
 
+### Test Coverage
+
+`./gradlew :backend:test` also generates a JaCoCo report (`jacocoTestReport` runs as a `finalizedBy` of `test`) — HTML at `backend/build/reports/jacoco/test/html/index.html`, XML at `backend/build/reports/jacoco/test/jacocoTestReport.xml`. No coverage threshold is enforced (`jacocoTestCoverageVerification` isn't wired up) — this is reporting only, not a build gate. Coverage runs high (class/line coverage both in the 90s%) mostly as a side effect of this project's testing style: every feature has a real integration test exercising its full stack against Testcontainers Postgres/Ollama rather than unit tests with mocked ports, so a passing test suite already walks through nearly every adapter and domain service.
+
 ### Running the Backend
 
 ```bash
