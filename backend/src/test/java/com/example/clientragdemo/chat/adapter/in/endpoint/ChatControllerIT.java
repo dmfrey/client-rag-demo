@@ -58,10 +58,8 @@ class ChatControllerIT {
         assertThat(body).contains("event:sources");
         assertThat(body).contains(filename);
 
-        ResponseEntity<MessageResponse[]> messagesResponse = restTemplate.exchange(
-                "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class);
-        assertThat(messagesResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(List.of(messagesResponse.getBody())).extracting(MessageResponse::role).contains("USER", "ASSISTANT");
+        List<MessageResponse> messages = fetchMessages(authHeaders, sessionId);
+        assertThat(messages).extracting(MessageResponse::role).contains("USER", "ASSISTANT");
 
         // Citation persistence and title generation both happen as best-effort side effects after
         // the stream completes (see SendChatMessageService), so poll rather than assert immediately.
@@ -70,15 +68,12 @@ class ChatControllerIT {
                 sessions -> sessions.length == 1 && sessions[0].title() != null);
 
         await().atMost(Duration.ofSeconds(30)).until(
-                () -> List.of(restTemplate.exchange(
-                        "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class).getBody()),
-                messages -> messages.stream()
+                () -> fetchMessages(authHeaders, sessionId),
+                fetched -> fetched.stream()
                         .filter(message -> "ASSISTANT".equals(message.role()))
                         .anyMatch(message -> message.citations() != null && !message.citations().isEmpty()));
 
-        MessageResponse assistantMessage = List.of(restTemplate.exchange(
-                        "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class).getBody())
-                .stream()
+        MessageResponse assistantMessage = fetchMessages(authHeaders, sessionId).stream()
                 .filter(message -> "ASSISTANT".equals(message.role()))
                 .findFirst()
                 .orElseThrow();
@@ -110,6 +105,35 @@ class ChatControllerIT {
     }
 
     @Test
+    void chatMemoryEvictsOldestMessagesOncePastTheConfiguredWindow() {
+        // Test config (application.yml) sets app.chat.memory.max-messages to 4 - proves
+        // ChatConfiguration's chatMemory bean actually applies ChatMemoryProperties, not just
+        // that it compiles against Spring AI's default 20-message window.
+        HttpHeaders authHeaders = registerAndLogin("chat-window-" + UUID.randomUUID());
+        Long sessionId = createChatSession(authHeaders);
+
+        sendAndAwaitStreamCompletion(authHeaders, sessionId, "MARKER_ONE this is the first message");
+        sendAndAwaitStreamCompletion(authHeaders, sessionId, "MARKER_TWO this is the second message");
+
+        // Two exchanges (4 messages) exactly fill a 4-message window - nothing evicted yet.
+        List<MessageResponse> afterTwoExchanges = fetchMessages(authHeaders, sessionId);
+        assertThat(afterTwoExchanges).hasSize(4);
+        assertThat(afterTwoExchanges).anyMatch(message -> message.content().contains("MARKER_ONE"));
+
+        sendAndAwaitStreamCompletion(authHeaders, sessionId, "MARKER_THREE this is the third message");
+
+        // A third exchange pushes the window past 4 messages - the first exchange should be
+        // evicted from the database outright, not just hidden from this one read.
+        await().atMost(Duration.ofSeconds(30)).until(
+                () -> fetchMessages(authHeaders, sessionId),
+                messages -> messages.size() == 4 && messages.stream().noneMatch(message -> message.content().contains("MARKER_ONE")));
+
+        List<MessageResponse> afterThreeExchanges = fetchMessages(authHeaders, sessionId);
+        assertThat(afterThreeExchanges).anyMatch(message -> message.content().contains("MARKER_TWO"));
+        assertThat(afterThreeExchanges).anyMatch(message -> message.content().contains("MARKER_THREE"));
+    }
+
+    @Test
     void messagesRequireOwnership() {
         HttpHeaders ownerHeaders = registerAndLogin("chat-owner-" + UUID.randomUUID());
         Long sessionId = createChatSession(ownerHeaders);
@@ -128,6 +152,11 @@ class ChatControllerIT {
                 "/api/chats/999999999/messages", HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private List<MessageResponse> fetchMessages(HttpHeaders authHeaders, Long sessionId) {
+        return List.of(restTemplate.exchange(
+                "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), MessageResponse[].class).getBody());
     }
 
     private void sendAndAwaitStreamCompletion(HttpHeaders authHeaders, Long sessionId, String content) {

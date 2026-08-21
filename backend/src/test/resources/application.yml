@@ -36,3 +36,12 @@ spring:
       # Every other test upload is a small in-memory string, well under this.
       max-file-size: 100KB
       max-request-size: 100KB
+
+app:
+  chat:
+    memory:
+      # Deliberately much lower than production (application.yaml's 20) so ChatControllerIT can
+      # prove eviction actually happens at the configured limit without sending 20+ real chat
+      # messages. Every other test in this suite sends at most 2 messages per session, well
+      # under this.
+      max-messages: 4
