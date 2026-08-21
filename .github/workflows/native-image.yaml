@@ -37,7 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     # Native-image compilation is slow (Tika/PDFBox/POI + Liquibase + Spring AI pull in a large
     # reflective surface) - the default 6h timeout is needlessly generous for a genuine hang.
-    timeout-minutes: 30
+    # 30 was too tight once OpenAiRuntimeHints/PoiRuntimeHints started registering thousands of
+    # classes across com.openai.models and org.openxmlformats.schemas for reflection - a real run
+    # hit "exceeded the maximum execution time of 30m0s" on the native-image step alone (backend
+    # tests, a separate job, took under 4 minutes).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
