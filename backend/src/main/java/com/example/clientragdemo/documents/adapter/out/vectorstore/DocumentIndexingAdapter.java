@@ -3,6 +3,7 @@ package com.example.clientragdemo.documents.adapter.out.vectorstore;
 import com.example.clientragdemo.documents.application.domain.model.ContentType;
 import com.example.clientragdemo.documents.application.port.out.DeleteDocumentChunksPort;
 import com.example.clientragdemo.documents.application.port.out.IndexDocumentChunksPort;
+import com.example.clientragdemo.documents.configuration.DocumentIngestionProperties;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -21,9 +22,11 @@ import java.util.Map;
 class DocumentIndexingAdapter implements IndexDocumentChunksPort, DeleteDocumentChunksPort {
 
     private final VectorStore vectorStore;
+    private final DocumentIngestionProperties ingestionProperties;
 
-    DocumentIndexingAdapter(VectorStore vectorStore) {
+    DocumentIndexingAdapter(VectorStore vectorStore, DocumentIngestionProperties ingestionProperties) {
         this.vectorStore = vectorStore;
+        this.ingestionProperties = ingestionProperties;
     }
 
     @Override
@@ -42,7 +45,10 @@ class DocumentIndexingAdapter implements IndexDocumentChunksPort, DeleteDocument
                 .map(document -> new org.springframework.ai.document.Document(document.getText(), metadata))
                 .toList();
 
-        List<org.springframework.ai.document.Document> chunks = TokenTextSplitter.builder().build().apply(tagged);
+        List<org.springframework.ai.document.Document> chunks = TokenTextSplitter.builder()
+                .withChunkSize(ingestionProperties.chunkSize())
+                .build()
+                .apply(tagged);
 
         vectorStore.add(chunks);
 
