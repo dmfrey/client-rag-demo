@@ -1,21 +1,21 @@
 # Cloud Foundry manifest for both apps. `cf push` from the repo root deploys both together.
 #
-# Everything below is filled in for this foundation already, except vars.yml (gitignored - see
-# step 3). Before pushing, build the frontend with the backend's *actual* route baked in - it's a
-# static SPA, so this has to happen before `cf push`, not after:
+# Everything below is filled in for this foundation already, except vars.yml (gitignored):
 #
-#   1. Decide the backend's route (the `routes:` value below) - it has to be known up front,
-#      since the frontend build needs it and CF manifest variables aren't resolved until push
-#      time, too late for a static build.
-#   2. cd frontend && VITE_API_BASE_URL=https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com npm run build
-#   3. client-rag-demo-db (postgres) and client-rag-demo-ai (ai-models) already exist (`cf
+#   1. client-rag-demo-db (postgres) and client-rag-demo-ai (ai-models) already exist (`cf
 #      services`) - see the services: comment below for what's still needed before they're
 #      actually usable. Their real credentials go in vars.yml (gitignored, not this file - see
 #      vars.yml.example for the shape) for CF's ((var)) substitution below.
-#   4. cf push --vars-file vars.yml   (from the repo root, using this manifest)
+#   2. cf push --vars-file vars.yml   (from the repo root, using this manifest)
 #
 # The backend image (docker.image below) is built and published to GHCR by
 # .github/workflows/native-image.yaml on every push to main - no local image build needed here.
+# The frontend is pushed as source and built by the web_servers_cnb_beta buildpack during
+# staging (see that app's env: block) - no local `npm run build` step needed either. This works
+# because CF adds the manifest's env: block (including VITE_API_BASE_URL, which Vite needs at
+# build time to bake in the backend's absolute URL) to the *staging* container's environment as
+# well as the running container's, not just the latter - see
+# https://docs.cloudfoundry.org/devguide/deploy-apps/manifest-attributes.html.
 version: 1
 applications:
   - name: client-rag-demo-backend
@@ -80,11 +80,23 @@ applications:
       - client-rag-demo-ai
 
   - name: client-rag-demo-frontend
-    # Built by `npm run build` (see step 2 above) - not built by CF, just served as-is.
-    path: frontend/dist
+    # Pushed as source (package.json, src/, vite.config.ts, ...) - the buildpack runs
+    # `npm install && npm run build` itself (BP_NODE_RUN_SCRIPTS below names the package.json
+    # script to run - "build" is this project's existing `tsc -b && vite build`), then serves
+    # BP_WEB_SERVER_ROOT's output over nginx. frontend/.cfignore keeps node_modules and any
+    # locally-built dist/ out of the upload - both get (re)created fresh during staging.
+    path: frontend
     buildpacks:
-      - staticfile_buildpack
+      - web_servers_cnb_beta
     memory: 64M
     instances: 1
     routes:
       - route: client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+    env:
+      BP_NODE_RUN_SCRIPTS: build
+      BP_WEB_SERVER: nginx
+      BP_WEB_SERVER_ROOT: dist
+      BP_WEB_SERVER_ENABLE_PUSH_STATE: "true"
+      # Baked into the built JS bundle by Vite at build time (see src/vite-env.d.ts,
+      # src/api/client.ts) - must match the backend's route above exactly.
+      VITE_API_BASE_URL: https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
