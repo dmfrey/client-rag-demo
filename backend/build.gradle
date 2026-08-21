@@ -118,5 +118,18 @@ tasks.named('bootBuildImage') {
 	// Paketo's native-image builder (Linux-based, unlike a locally-invoked native-image binary)
 	// is also how the CI workflow builds the published image - building it locally the same way
 	// exercises the exact same path this app will actually run under in production.
-	environment = ['BP_NATIVE_IMAGE': 'true']
+	environment = [
+		'BP_NATIVE_IMAGE': 'true',
+		// GraalVM only bundles a minimal charset set by default (no CP1252/Windows-1252) - Apache
+		// POI's LocaleUtil has a static initializer that loads CP1252 unconditionally to parse any
+		// OOXML file (DOCX/XLSX/PPTX), with no fallback/catch around it (unlike PDFBox's own
+		// Windows-1252 lookup elsewhere, which does catch and fall back) - so an uncaught
+		// ExceptionInInitializerError there doesn't just fail one document, it permanently breaks
+		// LocaleUtil (and therefore every DOCX upload) for the running instance's whole lifetime,
+		// discovered only by a real .docx upload in production. -H:+AddAllCharsets is the current,
+		// non-deprecated flag (confirmed via `native-image --expert-options-all`) for including
+		// every hosted charset rather than registering CP1252 alone and re-discovering the next
+		// missing one whenever some other document's encoding differs.
+		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets',
+	]
 }

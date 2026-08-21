@@ -68,11 +68,16 @@ applications:
       SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
       SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
       # nomic-embed-text-v2-moe on this proxy enforces a 512-token limit - well under
-      # TokenTextSplitter's 800-token default (application.yaml) - confirmed by a real chunk
-      # failing ingestion with a 400 from the embedding model. Kept well under 512 rather than
-      # right up against it since TokenTextSplitter's own token count and whatever tokenizer
-      # this model enforces its limit with aren't guaranteed to agree exactly on the same text.
-      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "400"
+      # TokenTextSplitter's 800-token default (application.yaml). TokenTextSplitter's chunkSize
+      # is a hard cap under its own tokenizer (jtokkit's CL100K_BASE, an OpenAI/GPT-style BPE
+      # encoding - see TokenTextSplitter.doSplit's tokens.subList(0, Math.min(chunkSize, ...))),
+      # but this model almost certainly uses a different tokenizer (nomic-embed-text-v2-moe is a
+      # BERT-family model, so most likely WordPiece/SentencePiece) - confirmed by a real 400-token
+      # (by jtokkit's count) chunk that the *model* rejected as 513+ tokens, a ~28% disagreement.
+      # 256 - exactly half the 512 limit - is deliberately not a tight fit around that one
+      # observed data point: the actual worst-case disagreement across arbitrary text is unknown,
+      # and getting this wrong again costs a full CI + redeploy cycle to discover.
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "256"
       # Must match the frontend's actual route below exactly (scheme + host, no trailing slash).
       APP_CORS_ALLOWED_ORIGINS: https://client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
     services:
