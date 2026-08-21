@@ -20,9 +20,10 @@ Multi-module application targeting Tanzu Platform deployment:
 
 - **React** + **TypeScript**, scaffolded with **Vite** (`react-ts` template)
 - **npm** as package manager
-- No test runner or component library added yet — bare Vite scaffold
+- **React Router** for navigation, **TanStack Query** for server state, **Tailwind CSS v4** for styling — no separate component library
+- **Vitest** + **React Testing Library** for tests (`npm test` in `frontend/`)
 
-How the frontend and backend integrate at runtime (dev proxy, static-asset serving, separate deployment, etc.) is not decided yet.
+Dev server proxies `/api` to the backend (`vite.config.ts`) rather than the frontend hardcoding a backend origin — frontend code always calls relative paths (`/api/...`). This same shape works unchanged in any deployment that puts the built frontend and the backend behind one origin; the specific deployment topology (reverse proxy, backend serving the static build, etc.) is still undecided.
 
 ## Local Development
 
@@ -100,6 +101,16 @@ cd frontend
 npm install   # first time only
 npm run dev
 ```
+
+### Running Frontend Tests
+
+```bash
+cd frontend
+npm test          # single run
+npm run test:watch
+```
+
+`vite.config.ts` sets `mockReset: true` deliberately — without it, a `vi.fn()`'s call history from one test leaks into the next within the same file, which silently breaks any assertion of the form "not called yet" (found the hard way writing `DocumentsPage.test.tsx`'s confirm-before-upload tests). Also worth knowing: `userEvent.upload()` on a file input respects that input's `accept` attribute and silently drops non-matching files rather than delivering them to the change handler — if you need to test rejection of an unsupported file type, drive it through a real `drop` event instead (see `DocumentsPage.test.tsx`), since drag-and-drop has no such restriction and is the actual bug surface.
 
 ## Backend Architecture
 
