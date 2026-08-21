@@ -10,7 +10,7 @@ Multi-module application targeting Tanzu Platform deployment:
 ### Backend (`backend/`)
 
 - **Java 25** (toolchain)
-- **Spring Boot 4.1.1** — runs as a regular JVM application/container image for now; GraalVM native image is a deliberately deferred goal, not current behavior (see Build below)
+- **Spring Boot 4.1.1** — ships as a GraalVM native-image container image (see Build below)
 - **Spring Data JDBC** + **Liquibase** (PostgreSQL)
 - **Spring MVC** (webmvc)
 - **Observability**: Micrometer tracing (Brave bridge), Prometheus, datasource-micrometer
@@ -225,11 +225,15 @@ This is a regular JVM-based image today, not a GraalVM native-image binary — `
 
 Registry credentials are passed as Gradle properties (`-PregistryUrl`, `-PregistryUsername`, `-PregistryPassword`).
 
-### GraalVM native image (deferred — anticipated issues)
+### GraalVM native image
 
-Not started. From prior experience with this stack, expect at least these two to need explicit handling when this work begins (not yet investigated in *this* project — don't treat as confirmed findings):
-- **Liquibase**: needs AOT/reflection hints for changelog parsing and JDBC driver classes to run correctly under `native-image`.
-- **Micrometer observability** (tracing/Prometheus): instrumentation that relies on runtime bytecode generation or reflection typically needs native-image hints too.
+Working, as of the fixes below - all discovered by actually running `processAot`, `nativeCompile`, and a real native executable against Postgres/Ollama, not anticipated in advance:
+
+- **`processAot` needs a live, reachable database purely because of Spring Data JDBC's dialect auto-detection** (`DataJdbcRepositoriesAutoConfiguration$SpringBootJdbcConfiguration#jdbcDialect`, `@ConditionalOnMissingBean`) - AOT's eager bean-factory introspection instantiates `NamedParameterJdbcOperations` → `dataSource` to query the dialect from a real connection, and does so *before* `@ConfigurationProperties` binding has run for that early pass, so `spring.datasource.*` (env var or `-D`, doesn't matter) is seen as unset and dataSource creation fails with "Failed to determine a suitable driver class" even with a real reachable database and correct properties. Fixed by declaring an explicit `JdbcDialect` bean (`configuration/JdbcDialectConfig`, `JdbcPostgresDialect.INSTANCE` - this app is Postgres-only) so Boot's auto-detecting bean never gets created at all; also removes a real, if small, per-startup DB round trip in production.
+- **Liquibase's changelog parser reflectively invokes each Change/config class's setters (to populate it) and getters (to recompute checksums, on *every* startup, not just the first)** - GraalVM strips unregistered members, so an uncovered type throws `MissingReflectionRegistrationError` at whatever point that type's parsing/checksum path is first hit, which can be startup N, not necessarily startup 1. `configuration/LiquibaseRuntimeHints` registers exactly the change types this project's changelogs use (`createTable`, `createIndex`, `sql`, `sqlFile`) plus their shared superclasses. Add a type there if a new changelog change type is introduced and this error resurfaces.
+- **`org.eclipse.angus:angus-activation`** (pulled in transitively via `jaxb-core`, used by Tika/POI for XML/OOXML parsing, nothing to do with email) **registers a native-image `Feature` that unconditionally references `jakarta.mail.Part`** - without that class on the classpath, native-image generation itself fails with `NoClassDefFoundError` before the app even starts. Fixed with a `runtimeOnly` dependency on just `jakarta.mail:jakarta.mail-api` (API only, no implementation, no functionality used) to satisfy the class lookup.
+- **PDFBox 3.x's `PDDocument` static initializer touches `java.awt.image.ColorModel`/`Raster`** (AWT/Java2D, apparently regardless of whether the PDF or the extraction path involves images at all) **- on macOS specifically, this crashed a directly-invoked (`nativeCompile`) native executable at runtime with `NoSuchFieldError: ColorModel.nBits`**, a JNI field-registration gap in GraalVM's macOS AWT native-image support. Did not reproduce building the same app via Cloud Native Buildpacks (Linux) instead, so treated as a macOS-native-image-only gap, not something this project's production path hits. If it resurfaces on Linux, look at GraalVM's AWT/headless native-image support first.
+- Micrometer/Prometheus needed no extra hints - `micrometer-registry-prometheus` is `runtimeOnly` and worked without further changes.
 
 ### CI/CD
 
