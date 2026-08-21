@@ -3,10 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { documentsApi } from "../api/documents";
 import { ApiError } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { Document } from "../api/types";
 
 const MAX_CONCURRENT_UPLOADS = 10;
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".txt"];
+
+interface PendingConfirmation {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}
 
 function hasAcceptedExtension(filename: string): boolean {
   return ACCEPTED_EXTENSIONS.some((extension) => filename.toLowerCase().endsWith(extension));
@@ -17,6 +25,7 @@ export function DocumentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
 
   const documentsQuery = useQuery({
     queryKey: ["documents"],
@@ -26,13 +35,13 @@ export function DocumentsPage() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: documentsApi.upload,
+    mutationFn: (file: File) => documentsApi.upload(file),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
     onError: (error) => setUploadError(error instanceof ApiError ? error.message : "Upload failed. Please try again."),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: documentsApi.remove,
+    mutationFn: (id: number) => documentsApi.remove(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
   });
 
@@ -51,7 +60,13 @@ export function DocumentsPage() {
     }
 
     const existing = documents.find((doc) => doc.filename === file.name);
-    if (existing && !window.confirm(`This will replace the existing "${existing.filename}" — continue?`)) {
+    if (existing) {
+      setPendingConfirmation({
+        title: "Replace document?",
+        message: `This will replace the existing "${existing.filename}" — continue?`,
+        confirmLabel: "Replace",
+        onConfirm: () => uploadMutation.mutate(file),
+      });
       return;
     }
 
@@ -59,9 +74,12 @@ export function DocumentsPage() {
   }
 
   function handleDelete(doc: Document) {
-    if (window.confirm(`Delete "${doc.filename}"? This can't be undone.`)) {
-      deleteMutation.mutate(doc.id);
-    }
+    setPendingConfirmation({
+      title: "Delete document?",
+      message: `Delete "${doc.filename}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      onConfirm: () => deleteMutation.mutate(doc.id),
+    });
   }
 
   return (
@@ -69,6 +87,7 @@ export function DocumentsPage() {
       <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Documents</h1>
 
       <div
+        data-testid="dropzone"
         onDragOver={(event) => {
           event.preventDefault();
           setIsDraggingOver(true);
@@ -156,6 +175,19 @@ export function DocumentsPage() {
           )}
         </tbody>
       </table>
+
+      {pendingConfirmation && (
+        <ConfirmDialog
+          title={pendingConfirmation.title}
+          message={pendingConfirmation.message}
+          confirmLabel={pendingConfirmation.confirmLabel}
+          onConfirm={() => {
+            pendingConfirmation.onConfirm();
+            setPendingConfirmation(null);
+          }}
+          onCancel={() => setPendingConfirmation(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -15,5 +16,15 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    // Without this, a vi.fn()'s call history from one test leaks into the next test's
+    // assertions within the same file - it's not just a "cleaner" default here, tests that
+    // assert "not called yet" (e.g. DocumentsPage's confirm-before-upload flow) are silently
+    // wrong without it.
+    mockReset: true,
   },
 })
