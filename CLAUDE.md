@@ -10,7 +10,7 @@ Multi-module application targeting Tanzu Platform deployment:
 ### Backend (`backend/`)
 
 - **Java 25** (toolchain)
-- **Spring Boot 4.1.1** — ships as a GraalVM native-image container image (see Build below)
+- **Spring Boot 4.1.1** — ships as a GraalVM native-image container image, built via Cloud Native Buildpacks and published to GHCR on every push to `main` (see Build below)
 - **Spring Data JDBC** + **Liquibase** (PostgreSQL)
 - **Spring MVC** (webmvc)
 - **Observability**: Micrometer tracing (Brave bridge), Prometheus, datasource-micrometer
@@ -215,15 +215,15 @@ Several dependencies own tables that need a schema but (correctly) don't manage 
 
 ### Container Image (CI)
 
-The CI workflow builds a container image via Cloud Native Buildpacks:
+`.github/workflows/native-image.yaml` runs the backend test suite, then (on push to `main`, or manual dispatch) builds a GraalVM native-image container via Cloud Native Buildpacks and publishes it to `ghcr.io/<owner>/<repo>:latest`, authenticating with the workflow's own `GITHUB_TOKEN` (needs `packages: write`, already set in the workflow) — no separate registry secret needed:
 
 ```bash
-./gradlew :backend:bootBuildImage
+./gradlew :backend:bootBuildImage --imageName=ghcr.io/<owner>/<repo>:latest --publishImage
 ```
 
-This is a regular JVM-based image today, not a GraalVM native-image binary — `build.gradle` doesn't apply `org.graalvm.buildtools.native`, and no `BP_NATIVE_IMAGE` buildpack environment variable is set. True native image is an explicit future goal (this is a demo app; not worth the build-time/complexity cost until there's a real deployment target driving it), tracked here rather than silently left inconsistent with the tech stack description above.
+Locally, `./gradlew :backend:bootBuildImage` (imageName defaults to `ghcr.io/dmfrey/client-rag-demo:${version}` per `backend/build.gradle`) builds the same image into the local Docker/Podman daemon without publishing. `BP_NATIVE_IMAGE=true` (set as the task's `environment`, not a shell env var) is what tells the Paketo builder to produce a native image instead of a regular JVM layer — the actual `native-image` compilation runs inside Paketo's Linux builder container, so neither a local machine nor the CI runner needs GraalVM installed themselves, just Docker/Podman.
 
-Registry credentials are passed as Gradle properties (`-PregistryUrl`, `-PregistryUsername`, `-PregistryPassword`).
+If your local Docker CLI config (`~/.docker/config.json`) has `credsStore`/`currentContext` pointing at Docker Desktop (common if it was ever installed, even though this project uses Podman) - `bootBuildImage` will fail trying to resolve credentials or find a socket that doesn't exist under Podman. Don't work around this by editing `bootBuildImage`'s `docker {}` block in `build.gradle` (that's shared config, including for CI, which has neither problem) - fix or ignore the local Docker CLI config instead, e.g. `docker context use default` or removing the stale `credsStore` entry.
 
 ### GraalVM native image
 

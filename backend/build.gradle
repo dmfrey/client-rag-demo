@@ -107,3 +107,11 @@ jacocoTestReport {
 		html.required = true
 	}
 }
+
+tasks.named('bootBuildImage') {
+	imageName = "ghcr.io/dmfrey/client-rag-demo:${project.version}"
+	// Paketo's native-image builder (Linux-based, unlike a locally-invoked native-image binary)
+	// is also how the CI workflow builds the published image - building it locally the same way
+	// exercises the exact same path this app will actually run under in production.
+	environment = ['BP_NATIVE_IMAGE': 'true']
+}

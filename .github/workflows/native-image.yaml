@@ -1,0 +1,58 @@
+name: Build and Publish Native Image
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Needed to push the built image to GHCR under this repo.
+  packages: write
+
+jobs:
+  test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Run backend tests
+        run: ./gradlew :backend:test
+
+  publish-native-image:
+    name: Build and publish native image
+    needs: test
+    runs-on: ubuntu-latest
+    # Native-image compilation is slow (Tika/PDFBox/POI + Liquibase + Spring AI pull in a large
+    # reflective surface) - the default 6h timeout is needlessly generous for a genuine hang.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # bootBuildImage runs the actual native-image compilation inside Paketo's Linux builder
+      # container via Cloud Native Buildpacks (BP_NATIVE_IMAGE=true, set in backend/build.gradle)
+      # - the runner's own JDK just orchestrates Gradle/AOT processing, it doesn't need GraalVM
+      # itself.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish native image
+        run: |
+          ./gradlew :backend:bootBuildImage \
+            --imageName=ghcr.io/${{ github.repository }}:latest \
+            --publishImage
