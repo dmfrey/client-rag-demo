@@ -2,7 +2,7 @@
 
 Multi-module application targeting Tanzu Platform deployment:
 
-- **`backend/`** — Spring Boot 4.1.0 application (this is the original single-module project; all Gradle/Java content lives here now)
+- **`backend/`** — Spring Boot 4.1.1 application (this is the original single-module project; all Gradle/Java content lives here now)
 - **`frontend/`** — React + Vite + TypeScript application
 
 ## Tech Stack
@@ -10,7 +10,7 @@ Multi-module application targeting Tanzu Platform deployment:
 ### Backend (`backend/`)
 
 - **Java 25** (toolchain)
-- **Spring Boot 4.1.0** — runs as a regular JVM application/container image for now; GraalVM native image is a deliberately deferred goal, not current behavior (see Build below)
+- **Spring Boot 4.1.1** — runs as a regular JVM application/container image for now; GraalVM native image is a deliberately deferred goal, not current behavior (see Build below)
 - **Spring Data JDBC** + **Liquibase** (PostgreSQL)
 - **Spring MVC** (webmvc)
 - **Observability**: Micrometer tracing (Brave bridge), Prometheus, datasource-micrometer
