@@ -180,6 +180,7 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 - Feature-scoped `@Configuration` only
 - `@ComponentScan` scoped to the feature's root package — picks up `@Service`, `@Repository`, etc. within this feature only
 - `@EnableJdbcRepositories` scoped to the feature's persistence package — limits Spring Data JDBC repository scanning to this feature
+- For anything with more than one field, or that wants a typed default/validation, prefer a `@ConfigurationProperties` record over `@Value` (`@Value` is still fine for a single simple property like `SecurityConfig`'s CORS origins list). See `chat/configuration/ChatMemoryProperties` — bind it with `@EnableConfigurationProperties` on the feature's `@Configuration` class, not `@ConfigurationPropertiesScan`, to keep the feature's Spring wiring explicit and visible in one place rather than discovered by scanning.
 
 **Root Configuration** (`com.example.clientragdemo.configuration/`):
 - Cross-cutting concerns only (security, observability config, etc.)
