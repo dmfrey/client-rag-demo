@@ -15,14 +15,19 @@ import org.springframework.aot.hint.RuntimeHintsRegistrar;
 // 2. Reflection: the generated interface+impl classes XMLBeans instantiates for each OOXML schema
 //    element (e.g. DocumentDocument/DocumentDocumentImpl for the root of a .docx's word/document.xml)
 //    live under org.openxmlformats.schemas - thousands of classes across drawingml/wordprocessingml/
-//    office/etc. Without reflection access, XMLBeans silently falls back to a generic wrapper type
-//    instead of the specific one POI expects, surfacing as
+//    office/spreadsheetml/presentationml/etc. Without reflection access, XMLBeans silently falls
+//    back to a generic wrapper type instead of the specific one POI expects, surfacing as
 //    ClassCastException: XmlComplexContentImpl cannot be cast to ...DocumentDocument - a
 //    completely different failure mode from the resource gap above, only found by getting far
-//    enough into a real .docx to hit it. Scoped to wordprocessingml/office/drawingml (Word
-//    documents can embed drawings/images via drawingml) rather than the full tree, which also
-//    includes spreadsheetml/presentationml/Visio schemas this app's PDF/DOCX/TXT-only scope never
-//    reaches.
+//    enough into a real .docx to hit it.
+//
+// Scoped to wordprocessingml alone (903 classes) rather than the whole org.openxmlformats.schemas
+// tree (~4,700+ across every OOXML format, since this app only accepts PDF/DOCX/TXT) - registering
+// office+drawingml too (on the theory that a .docx could embed drawings) actually broke the
+// native-image build outright: the analysis phase's own deadlock watchdog aborted a real CI run at
+// ~10GB heap. Narrowed back to exactly what's proven necessary (DocumentDocument/DocumentDocumentImpl
+// are in wordprocessingml) rather than registering defensively; add more scoped packages here only
+// if a real document exercising them actually fails, the same way this whole file's scope was found.
 public class PoiRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override
@@ -30,7 +35,5 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
         hints.resources().registerPattern("org/apache/poi/schemas/**");
 
         PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.wordprocessingml");
-        PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.office");
-        PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.drawingml");
     }
 }
