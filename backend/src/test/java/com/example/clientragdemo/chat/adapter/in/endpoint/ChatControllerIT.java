@@ -86,6 +86,30 @@ class ChatControllerIT {
     }
 
     @Test
+    void sidebarOrdersSessionsByMostRecentActivityNotJustFirstMessage() {
+        HttpHeaders authHeaders = registerAndLogin("chat-order-" + UUID.randomUUID());
+
+        Long sessionA = createChatSession(authHeaders);
+        Long sessionB = createChatSession(authHeaders);
+
+        sendAndAwaitStreamCompletion(authHeaders, sessionA, "Hello from session A");
+        sendAndAwaitStreamCompletion(authHeaders, sessionB, "Hello from session B");
+
+        // B was touched more recently than A.
+        await().atMost(Duration.ofSeconds(30)).until(
+                () -> restTemplate.exchange("/api/chats", HttpMethod.GET, new HttpEntity<>(authHeaders), SessionResponse[].class).getBody(),
+                sessions -> sessions.length == 2 && sessions[0].id().equals(sessionB));
+
+        // Touching A again should move it back to the front - this is exactly what was broken
+        // when SendChatMessageService only bumped updated_at on a session's first message.
+        sendAndAwaitStreamCompletion(authHeaders, sessionA, "Second message in session A");
+
+        await().atMost(Duration.ofSeconds(30)).until(
+                () -> restTemplate.exchange("/api/chats", HttpMethod.GET, new HttpEntity<>(authHeaders), SessionResponse[].class).getBody(),
+                sessions -> sessions.length == 2 && sessions[0].id().equals(sessionA));
+    }
+
+    @Test
     void messagesRequireOwnership() {
         HttpHeaders ownerHeaders = registerAndLogin("chat-owner-" + UUID.randomUUID());
         Long sessionId = createChatSession(ownerHeaders);
@@ -104,6 +128,17 @@ class ChatControllerIT {
                 "/api/chats/999999999/messages", HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private void sendAndAwaitStreamCompletion(HttpHeaders authHeaders, Long sessionId, String content) {
+        HttpHeaders sseHeaders = new HttpHeaders();
+        sseHeaders.addAll(authHeaders);
+        sseHeaders.setAccept(List.of(MediaType.TEXT_EVENT_STREAM));
+
+        HttpEntity<SendMessageRequest> request = new HttpEntity<>(new SendMessageRequest(content), sseHeaders);
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/chats/" + sessionId + "/messages", HttpMethod.POST, request, String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     private Long createChatSession(HttpHeaders authHeaders) {

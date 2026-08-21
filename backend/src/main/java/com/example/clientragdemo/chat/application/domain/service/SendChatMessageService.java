@@ -65,10 +65,11 @@ class SendChatMessageService implements SendChatMessageUseCase {
                     }
                 });
 
-        // Best-effort: citation persistence and (for the first message) title generation both
-        // run after the visible response finishes streaming, offloaded so neither ever blocks
-        // token delivery. A failure here just means history won't show sources for this answer
-        // (title generation retries on the next message if it fails).
+        // Best-effort: citation persistence, the updated_at bump, and (for the first message)
+        // title generation all run after the visible response finishes streaming, offloaded so
+        // none of it ever blocks token delivery. A failure here just means history won't show
+        // sources for this answer, the session won't move up the sidebar's most-recent-first
+        // order, and/or title generation retries on the next message.
         return responseStream.doOnComplete(() ->
                 Mono.fromRunnable(() -> handleStreamCompletion(session, command.content(), capturedSources.get()))
                         .subscribeOn(Schedulers.boundedElastic())
@@ -77,9 +78,11 @@ class SendChatMessageService implements SendChatMessageUseCase {
 
     private void handleStreamCompletion(ChatSession session, String firstUserMessage, List<Citation> citations) {
         saveCitations(session.id(), citations);
-        if (session.title() == null) {
-            generateAndSaveTitle(session, firstUserMessage);
-        }
+
+        // Every message bumps updated_at, not just the one that also generates a title - the
+        // sidebar sorts by this to show most-recently-active sessions first.
+        String title = session.title() != null ? session.title() : generateChatTitlePort.generateTitle(firstUserMessage);
+        saveChatSessionPort.save(new ChatSession(session.id(), session.ownerUsername(), title, session.createdAt(), Instant.now()));
     }
 
     private void saveCitations(Long sessionId, List<Citation> citations) {
@@ -94,10 +97,5 @@ class SendChatMessageService implements SendChatMessageUseCase {
                 .ifPresentOrElse(
                         timestamp -> saveChatMessageCitationsPort.save(sessionId, timestamp, citations),
                         () -> logger.warn("No assistant message found to attach citations to for chat session " + sessionId));
-    }
-
-    private void generateAndSaveTitle(ChatSession session, String firstUserMessage) {
-        String title = generateChatTitlePort.generateTitle(firstUserMessage);
-        saveChatSessionPort.save(new ChatSession(session.id(), session.ownerUsername(), title, session.createdAt(), Instant.now()));
     }
 }
