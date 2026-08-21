@@ -17,8 +17,13 @@ async function extractErrorMessage(response: Response): Promise<string> {
   }
 }
 
+// Empty by default (relative paths, same-origin) - only set for deployments where the frontend
+// and backend are separate origins (see vite-env.d.ts and manifest.yml). Exported for chat.ts's
+// hand-rolled SSE fetch(), which can't go through request() below.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {

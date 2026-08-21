@@ -1,4 +1,4 @@
-import { api, ApiError } from "./client";
+import { api, ApiError, API_BASE_URL } from "./client";
 import type { ChatMessage, ChatSession, Citation } from "./types";
 
 export const chatApi = {
@@ -22,7 +22,7 @@ export interface StreamHandlers {
 export function sendMessageStream(sessionId: number, content: string, handlers: StreamHandlers, signal?: AbortSignal): void {
   void (async () => {
     try {
-      const response = await fetch(`/api/chats/${sessionId}/messages`, {
+      const response = await fetch(`${API_BASE_URL}/api/chats/${sessionId}/messages`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },

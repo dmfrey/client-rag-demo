@@ -1,0 +1,17 @@
+server:
+  # Cloud Foundry's Gorouter terminates TLS and forwards X-Forwarded-* headers to the app, which
+  # runs plain HTTP internally - without this, Spring never sees the request as secure (wrong
+  # scheme in any URL it builds, and would undermine the cookie.secure setting below if that were
+  # left to auto-detect from request.isSecure() instead of being forced).
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        # The frontend and backend are deployed as separate CF routes/origins (see manifest.yml),
+        # not behind one shared origin - session cookies are therefore genuinely cross-site from
+        # the browser's perspective. SameSite=None is required for the browser to send the cookie
+        # on those cross-origin fetch() calls at all (Lax, the default, blocks it), and browsers
+        # reject SameSite=None outright unless Secure is also set - true unconditionally rather
+        # than derived, since Gorouter's TLS termination always makes this true in practice.
+        same-site: none
+        secure: true

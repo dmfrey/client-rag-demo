@@ -1,0 +1,11 @@
+# Template for vars.yml (gitignored - real credentials never get committed). Copy this file to
+# vars.yml and fill in real values from the service keys:
+#   cf create-service-key client-rag-demo-db client-rag-demo-db-key
+#   cf service-key client-rag-demo-db client-rag-demo-db-key
+#   cf create-service-key client-rag-demo-ai client-rag-demo-ai-key
+#   cf service-key client-rag-demo-ai client-rag-demo-ai-key
+# Then: cf push --vars-file vars.yml
+db-jdbc-url: jdbc:postgresql://<credentials.hosts[0]>:<credentials.port>/<credentials.db>
+db-username: <credentials.user>
+db-password: <credentials.password>
+ai-api-key: <credentials.endpoint.api_key>

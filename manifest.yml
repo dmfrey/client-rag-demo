@@ -1,0 +1,90 @@
+# Cloud Foundry manifest for both apps. `cf push` from the repo root deploys both together.
+#
+# Everything below is filled in for this foundation already, except vars.yml (gitignored - see
+# step 3). Before pushing, build the frontend with the backend's *actual* route baked in - it's a
+# static SPA, so this has to happen before `cf push`, not after:
+#
+#   1. Decide the backend's route (the `routes:` value below) - it has to be known up front,
+#      since the frontend build needs it and CF manifest variables aren't resolved until push
+#      time, too late for a static build.
+#   2. cd frontend && VITE_API_BASE_URL=https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com npm run build
+#   3. client-rag-demo-db (postgres) and client-rag-demo-ai (ai-models) already exist (`cf
+#      services`) - see the services: comment below for what's still needed before they're
+#      actually usable. Their real credentials go in vars.yml (gitignored, not this file - see
+#      vars.yml.example for the shape) for CF's ((var)) substitution below.
+#   4. cf push --vars-file vars.yml   (from the repo root, using this manifest)
+#
+# The backend image (docker.image below) is built and published to GHCR by
+# .github/workflows/native-image.yaml on every push to main - no local image build needed here.
+version: 1
+applications:
+  - name: client-rag-demo-backend
+    docker:
+      image: ghcr.io/dmfrey/client-rag-demo:latest
+      # GitHub Container Registry packages default to private. If this one hasn't been made
+      # public, `cf push` needs registry credentials:
+      #   cf push --docker-username <your-github-username>
+      # (CF prompts for the password interactively - use a GitHub PAT with read:packages scope,
+      # not your account password). Making the package public avoids this entirely.
+    memory: 1G
+    instances: 1
+    routes:
+      - route: client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
+    # CF's own health check model doesn't distinguish liveness/readiness the way Kubernetes
+    # does (see application.yaml's management.endpoint.health.probes - that split is for a
+    # Kubernetes-based platform) - the aggregate endpoint is the right one to point CF at here.
+    health-check-type: http
+    health-check-http-endpoint: /actuator/health
+    env:
+      # Activates application-cloud.yaml - cross-origin session cookies (SameSite=None; Secure)
+      # and forwarded-headers handling, both required because the frontend and backend are
+      # separate routes/origins here, not one shared origin.
+      SPRING_PROFILES_ACTIVE: cloud
+      # This app doesn't parse VCAP_SERVICES (no java-cfenv/spring-cloud-bindings dependency, and
+      # spring-cloud-bindings wouldn't help anyway - confirmed by reading its source, it only
+      # reads bindings materialized as files under $SERVICE_BINDING_ROOT/$CNB_BINDINGS, the
+      # Kubernetes/Cloud-Native-Buildpacks convention, never VCAP_SERVICES) - binding
+      # client-rag-demo-db below makes its credentials visible in VCAP_SERVICES but doesn't
+      # configure the datasource from them. Real values come from a service key instead
+      # (`cf create-service-key client-rag-demo-db client-rag-demo-db-key`, then
+      # `cf service-key client-rag-demo-db client-rag-demo-db-key`) - see vars.yml.example for
+      # where they go; never put real credentials directly in this file, it's committed to git.
+      SPRING_DATASOURCE_URL: ((db-jdbc-url))
+      SPRING_DATASOURCE_USERNAME: ((db-username))
+      SPRING_DATASOURCE_PASSWORD: ((db-password))
+      # Same story for client-rag-demo-ai (ai-models/tanzu-all-models, an OpenAI-compatible proxy
+      # - see build.gradle): `cf create-service-key client-rag-demo-ai client-rag-demo-ai-key`,
+      # then `cf service-key client-rag-demo-ai client-rag-demo-ai-key` for
+      # credentials.endpoint.openai_api_base / .api_key (already a complete, ready-to-use base
+      # URL - no /v1 to append). credentials.endpoint.config_url (GET, bearer auth) lists exactly
+      # which models this binding actually grants access to, each tagged CHAT/EMBEDDING/TOOLS/
+      # VISION - openai/gpt-oss-120b (CHAT) and nomic-ai/nomic-embed-text-v2-moe (EMBEDDING) are
+      # what's configured below, picked from that list and confirmed working end-to-end
+      # (including a real embeddings call confirming 768 dimensions, matching vector_store's
+      # schema exactly - no migration needed). Neither model name is a secret, unlike the two
+      # settings above - only the API key needs to come from vars.yml.
+      SPRING_AI_OPENAI_BASE_URL: https://genai-proxy.sys.tas-ndc.kuhn-labs.com/tanzu-all-models-1a56b7a/openai
+      SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
+      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      # Must match the frontend's actual route below exactly (scheme + host, no trailing slash).
+      APP_CORS_ALLOWED_ORIGINS: https://client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+    services:
+      # postgres/on-demand-postgres-db. This app needs the pgvector extension available
+      # (db/changelog/documents/db.changelog-documents-002.yaml runs `CREATE EXTENSION vector`) -
+      # this is VMware Tanzu for Postgres, which generally supports it, but that hasn't been
+      # confirmed against this specific instance/plan yet - if the Liquibase migration fails on
+      # that CREATE EXTENSION step, that's the first thing to check.
+      - client-rag-demo-db
+      # ai-models/tanzu-all-models - see the SPRING_AI_OPENAI_* comment above.
+      - client-rag-demo-ai
+
+  - name: client-rag-demo-frontend
+    # Built by `npm run build` (see step 2 above) - not built by CF, just served as-is.
+    path: frontend/dist
+    buildpacks:
+      - staticfile_buildpack
+    memory: 64M
+    instances: 1
+    routes:
+      - route: client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
