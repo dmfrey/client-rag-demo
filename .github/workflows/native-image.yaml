@@ -40,8 +40,12 @@ jobs:
     # 30 was too tight once OpenAiRuntimeHints/PoiRuntimeHints started registering thousands of
     # classes across com.openai.models and org.openxmlformats.schemas for reflection - a real run
     # hit "exceeded the maximum execution time of 30m0s" on the native-image step alone (backend
-    # tests, a separate job, took under 4 minutes).
-    timeout-minutes: 45
+    # tests, a separate job, took under 4 minutes). 45 stopped being enough too - a real run of
+    # this exact job ran 13:26:12->14:11:30 (45m18s) and GitHub reported it as "cancelled" rather
+    # than a timeout failure, which is just how a timeout-triggered kill shows up in the API/UI -
+    # worth remembering next time this recurs, since "cancelled" looks like external interference
+    # otherwise. Bumped to 60 with headroom rather than inching up by 5 again.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
