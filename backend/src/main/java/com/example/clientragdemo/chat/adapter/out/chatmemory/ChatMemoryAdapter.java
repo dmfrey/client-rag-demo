@@ -2,6 +2,7 @@ package com.example.clientragdemo.chat.adapter.out.chatmemory;
 
 import com.example.clientragdemo.chat.application.domain.model.ChatMessage;
 import com.example.clientragdemo.chat.application.domain.model.ChatRole;
+import com.example.clientragdemo.chat.application.port.out.DeleteChatMessagesPort;
 import com.example.clientragdemo.chat.application.port.out.LoadChatMessagesPort;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
@@ -13,11 +14,11 @@ import java.time.Instant;
 import java.util.List;
 
 @Component
-class ChatMemoryReaderAdapter implements LoadChatMessagesPort {
+class ChatMemoryAdapter implements LoadChatMessagesPort, DeleteChatMessagesPort {
 
     private final ChatMemory chatMemory;
 
-    ChatMemoryReaderAdapter(ChatMemory chatMemory) {
+    ChatMemoryAdapter(ChatMemory chatMemory) {
         this.chatMemory = chatMemory;
     }
 
@@ -31,6 +32,11 @@ class ChatMemoryReaderAdapter implements LoadChatMessagesPort {
                         extractTimestamp(message),
                         List.of()))
                 .toList();
+    }
+
+    @Override
+    public void deleteBySession(Long sessionId) {
+        chatMemory.clear(sessionId.toString());
     }
 
     private static Instant extractTimestamp(Message message) {

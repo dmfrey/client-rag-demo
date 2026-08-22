@@ -18,6 +18,6 @@ class ListChatSessionsService implements ListChatSessionsUseCase {
 
     @Override
     public List<ChatSession> execute(ListChatSessionsQuery query) {
-        return loadChatSessionsByOwnerPort.loadByOwner(query.ownerUsername());
+        return loadChatSessionsByOwnerPort.loadByOwner(query.ownerUsername(), query.archived());
     }
 }

@@ -1,6 +1,7 @@
 package com.example.clientragdemo.chat.adapter.out.persistence;
 
 import com.example.clientragdemo.chat.application.domain.model.ChatSession;
+import com.example.clientragdemo.chat.application.port.out.DeleteChatSessionPort;
 import com.example.clientragdemo.chat.application.port.out.LoadChatSessionByIdPort;
 import com.example.clientragdemo.chat.application.port.out.LoadChatSessionsByOwnerPort;
 import com.example.clientragdemo.chat.application.port.out.SaveChatSessionPort;
@@ -10,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Component
-class ChatSessionPersistenceAdapter implements SaveChatSessionPort, LoadChatSessionByIdPort, LoadChatSessionsByOwnerPort {
+class ChatSessionPersistenceAdapter implements SaveChatSessionPort, LoadChatSessionByIdPort, LoadChatSessionsByOwnerPort, DeleteChatSessionPort {
 
     private final ChatSessionJdbcRepository repository;
 
@@ -24,6 +25,7 @@ class ChatSessionPersistenceAdapter implements SaveChatSessionPort, LoadChatSess
                 chatSession.id(),
                 chatSession.ownerUsername(),
                 chatSession.title(),
+                chatSession.archived(),
                 chatSession.createdAt(),
                 chatSession.updatedAt()));
         return toDomain(saved);
@@ -35,13 +37,18 @@ class ChatSessionPersistenceAdapter implements SaveChatSessionPort, LoadChatSess
     }
 
     @Override
-    public List<ChatSession> loadByOwner(String ownerUsername) {
-        return repository.findByOwnerUsernameOrderByUpdatedAtDesc(ownerUsername).stream()
+    public List<ChatSession> loadByOwner(String ownerUsername, boolean archived) {
+        return repository.findByOwnerUsernameAndArchivedOrderByUpdatedAtDesc(ownerUsername, archived).stream()
                 .map(ChatSessionPersistenceAdapter::toDomain)
                 .toList();
     }
 
+    @Override
+    public void deleteById(Long id) {
+        repository.deleteById(id);
+    }
+
     private static ChatSession toDomain(ChatSessionEntity entity) {
-        return new ChatSession(entity.id(), entity.ownerUsername(), entity.title(), entity.createdAt(), entity.updatedAt());
+        return new ChatSession(entity.id(), entity.ownerUsername(), entity.title(), entity.archived(), entity.createdAt(), entity.updatedAt());
     }
 }

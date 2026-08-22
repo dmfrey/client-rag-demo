@@ -11,6 +11,11 @@ export function ChatPage() {
   const sessionId = Number(id);
   const queryClient = useQueryClient();
 
+  const sessionQuery = useQuery({
+    queryKey: ["chats", sessionId],
+    queryFn: () => chatApi.get(sessionId),
+  });
+
   const messagesQuery = useQuery({
     queryKey: ["chats", sessionId, "messages"],
     queryFn: () => chatApi.getMessages(sessionId),
@@ -73,6 +78,12 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="flex-none border-b border-gray-200 px-6 py-3 dark:border-gray-800">
+        <h1 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+          {sessionQuery.data?.title ?? "New chat"}
+        </h1>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 p-6">
           {messages.map((message, index) => (

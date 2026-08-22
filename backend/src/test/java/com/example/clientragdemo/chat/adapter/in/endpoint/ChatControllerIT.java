@@ -134,6 +134,81 @@ class ChatControllerIT {
     }
 
     @Test
+    void renameUpdatesTitleAndRejectsBlank() {
+        HttpHeaders authHeaders = registerAndLogin("chat-rename-" + UUID.randomUUID());
+        Long sessionId = createChatSession(authHeaders);
+
+        ResponseEntity<SessionResponse> renamed = restTemplate.exchange(
+                "/api/chats/" + sessionId, HttpMethod.PATCH, new HttpEntity<>(new RenameRequest("  My Renamed Chat  "), authHeaders), SessionResponse.class);
+        assertThat(renamed.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(renamed.getBody().title()).isEqualTo("My Renamed Chat");
+
+        ResponseEntity<String> blank = restTemplate.exchange(
+                "/api/chats/" + sessionId, HttpMethod.PATCH, new HttpEntity<>(new RenameRequest("   "), authHeaders), String.class);
+        assertThat(blank.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void archiveAndUnarchiveRoundTripAndFilterTheListEndpoint() {
+        HttpHeaders authHeaders = registerAndLogin("chat-archive-" + UUID.randomUUID());
+        Long sessionId = createChatSession(authHeaders);
+
+        ResponseEntity<SessionResponse> archived = restTemplate.exchange(
+                "/api/chats/" + sessionId + "/archive", HttpMethod.POST, new HttpEntity<>(null, authHeaders), SessionResponse.class);
+        assertThat(archived.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(archived.getBody().archived()).isTrue();
+
+        assertThat(listSessions(authHeaders, false)).isEmpty();
+        assertThat(listSessions(authHeaders, true)).extracting(SessionResponse::id).containsExactly(sessionId);
+
+        ResponseEntity<SessionResponse> unarchived = restTemplate.exchange(
+                "/api/chats/" + sessionId + "/unarchive", HttpMethod.POST, new HttpEntity<>(null, authHeaders), SessionResponse.class);
+        assertThat(unarchived.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(unarchived.getBody().archived()).isFalse();
+
+        assertThat(listSessions(authHeaders, false)).extracting(SessionResponse::id).containsExactly(sessionId);
+        assertThat(listSessions(authHeaders, true)).isEmpty();
+    }
+
+    @Test
+    void deleteRemovesSessionMessagesAndCitations() {
+        HttpHeaders authHeaders = registerAndLogin("chat-delete-" + UUID.randomUUID());
+        Long sessionId = createChatSession(authHeaders);
+        sendAndAwaitStreamCompletion(authHeaders, sessionId, "Hello before deletion");
+
+        ResponseEntity<Void> deleteResponse = restTemplate.exchange(
+                "/api/chats/" + sessionId, HttpMethod.DELETE, new HttpEntity<>(authHeaders), Void.class);
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+
+        ResponseEntity<String> getAfterDelete = restTemplate.exchange(
+                "/api/chats/" + sessionId, HttpMethod.GET, new HttpEntity<>(authHeaders), String.class);
+        assertThat(getAfterDelete.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        ResponseEntity<String> messagesAfterDelete = restTemplate.exchange(
+                "/api/chats/" + sessionId + "/messages", HttpMethod.GET, new HttpEntity<>(authHeaders), String.class);
+        assertThat(messagesAfterDelete.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        assertThat(listSessions(authHeaders, false)).isEmpty();
+    }
+
+    @Test
+    void sessionMutationsRequireOwnership() {
+        HttpHeaders ownerHeaders = registerAndLogin("chat-mut-owner-" + UUID.randomUUID());
+        Long sessionId = createChatSession(ownerHeaders);
+
+        HttpHeaders otherHeaders = registerAndLogin("chat-mut-intruder-" + UUID.randomUUID());
+
+        assertThat(restTemplate.exchange("/api/chats/" + sessionId, HttpMethod.GET, new HttpEntity<>(otherHeaders), String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(restTemplate.exchange("/api/chats/" + sessionId, HttpMethod.PATCH, new HttpEntity<>(new RenameRequest("Hijacked"), otherHeaders), String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(restTemplate.exchange("/api/chats/" + sessionId + "/archive", HttpMethod.POST, new HttpEntity<>(null, otherHeaders), String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(restTemplate.exchange("/api/chats/" + sessionId, HttpMethod.DELETE, new HttpEntity<>(otherHeaders), String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void messagesRequireOwnership() {
         HttpHeaders ownerHeaders = registerAndLogin("chat-owner-" + UUID.randomUUID());
         Long sessionId = createChatSession(ownerHeaders);
@@ -152,6 +227,12 @@ class ChatControllerIT {
                 "/api/chats/999999999/messages", HttpMethod.GET, new HttpEntity<>(headers), String.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    private List<SessionResponse> listSessions(HttpHeaders authHeaders, boolean archived) {
+        return List.of(restTemplate.exchange(
+                        "/api/chats?archived=" + archived, HttpMethod.GET, new HttpEntity<>(authHeaders), SessionResponse[].class)
+                .getBody());
     }
 
     private List<MessageResponse> fetchMessages(HttpHeaders authHeaders, Long sessionId) {
@@ -217,7 +298,9 @@ class ChatControllerIT {
 
     private record SendMessageRequest(String content) {}
 
-    private record SessionResponse(Long id, String title, String createdAt, String updatedAt) {}
+    private record RenameRequest(String title) {}
+
+    private record SessionResponse(Long id, String title, boolean archived, String createdAt, String updatedAt) {}
 
     private record MessageResponse(String role, String content, List<CitationResponse> citations) {}
 

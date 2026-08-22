@@ -6,5 +6,5 @@ import java.util.List;
 
 interface ChatSessionJdbcRepository extends ListCrudRepository<ChatSessionEntity, Long> {
 
-    List<ChatSessionEntity> findByOwnerUsernameOrderByUpdatedAtDesc(String ownerUsername);
+    List<ChatSessionEntity> findByOwnerUsernameAndArchivedOrderByUpdatedAtDesc(String ownerUsername, boolean archived);
 }

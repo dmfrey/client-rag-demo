@@ -6,24 +6,37 @@ import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent;
 import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent.SourcesEvent;
 import com.example.clientragdemo.chat.application.domain.model.ChatStreamEvent.TokenEvent;
 import com.example.clientragdemo.chat.application.domain.model.Citation;
+import com.example.clientragdemo.chat.application.port.in.ArchiveChatSessionUseCase;
+import com.example.clientragdemo.chat.application.port.in.ArchiveChatSessionUseCase.ArchiveChatSessionCommand;
 import com.example.clientragdemo.chat.application.port.in.CreateChatSessionUseCase;
 import com.example.clientragdemo.chat.application.port.in.CreateChatSessionUseCase.CreateChatSessionCommand;
+import com.example.clientragdemo.chat.application.port.in.DeleteChatSessionUseCase;
+import com.example.clientragdemo.chat.application.port.in.DeleteChatSessionUseCase.DeleteChatSessionCommand;
 import com.example.clientragdemo.chat.application.port.in.GetChatMessagesUseCase;
 import com.example.clientragdemo.chat.application.port.in.GetChatMessagesUseCase.GetChatMessagesQuery;
+import com.example.clientragdemo.chat.application.port.in.GetChatSessionUseCase;
+import com.example.clientragdemo.chat.application.port.in.GetChatSessionUseCase.GetChatSessionQuery;
 import com.example.clientragdemo.chat.application.port.in.ListChatSessionsUseCase;
 import com.example.clientragdemo.chat.application.port.in.ListChatSessionsUseCase.ListChatSessionsQuery;
+import com.example.clientragdemo.chat.application.port.in.RenameChatSessionUseCase;
+import com.example.clientragdemo.chat.application.port.in.RenameChatSessionUseCase.RenameChatSessionCommand;
 import com.example.clientragdemo.chat.application.port.in.SendChatMessageUseCase;
 import com.example.clientragdemo.chat.application.port.in.SendChatMessageUseCase.SendChatMessageCommand;
+import com.example.clientragdemo.chat.application.port.in.UnarchiveChatSessionUseCase;
+import com.example.clientragdemo.chat.application.port.in.UnarchiveChatSessionUseCase.UnarchiveChatSessionCommand;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
@@ -37,17 +50,32 @@ class ChatController {
 
     private final CreateChatSessionUseCase createChatSessionUseCase;
     private final ListChatSessionsUseCase listChatSessionsUseCase;
+    private final GetChatSessionUseCase getChatSessionUseCase;
     private final GetChatMessagesUseCase getChatMessagesUseCase;
     private final SendChatMessageUseCase sendChatMessageUseCase;
+    private final RenameChatSessionUseCase renameChatSessionUseCase;
+    private final ArchiveChatSessionUseCase archiveChatSessionUseCase;
+    private final UnarchiveChatSessionUseCase unarchiveChatSessionUseCase;
+    private final DeleteChatSessionUseCase deleteChatSessionUseCase;
 
     ChatController(CreateChatSessionUseCase createChatSessionUseCase,
                     ListChatSessionsUseCase listChatSessionsUseCase,
+                    GetChatSessionUseCase getChatSessionUseCase,
                     GetChatMessagesUseCase getChatMessagesUseCase,
-                    SendChatMessageUseCase sendChatMessageUseCase) {
+                    SendChatMessageUseCase sendChatMessageUseCase,
+                    RenameChatSessionUseCase renameChatSessionUseCase,
+                    ArchiveChatSessionUseCase archiveChatSessionUseCase,
+                    UnarchiveChatSessionUseCase unarchiveChatSessionUseCase,
+                    DeleteChatSessionUseCase deleteChatSessionUseCase) {
         this.createChatSessionUseCase = createChatSessionUseCase;
         this.listChatSessionsUseCase = listChatSessionsUseCase;
+        this.getChatSessionUseCase = getChatSessionUseCase;
         this.getChatMessagesUseCase = getChatMessagesUseCase;
         this.sendChatMessageUseCase = sendChatMessageUseCase;
+        this.renameChatSessionUseCase = renameChatSessionUseCase;
+        this.archiveChatSessionUseCase = archiveChatSessionUseCase;
+        this.unarchiveChatSessionUseCase = unarchiveChatSessionUseCase;
+        this.deleteChatSessionUseCase = deleteChatSessionUseCase;
     }
 
     @PostMapping
@@ -57,10 +85,36 @@ class ChatController {
     }
 
     @GetMapping
-    List<ChatSessionResponse> list(Authentication authentication) {
-        return listChatSessionsUseCase.execute(new ListChatSessionsQuery(authentication.getName())).stream()
+    List<ChatSessionResponse> list(@RequestParam(defaultValue = "false") boolean archived, Authentication authentication) {
+        return listChatSessionsUseCase.execute(new ListChatSessionsQuery(authentication.getName(), archived)).stream()
                 .map(ChatController::toResponse)
                 .toList();
+    }
+
+    @GetMapping("/{id}")
+    ChatSessionResponse get(@PathVariable Long id, Authentication authentication) {
+        return toResponse(getChatSessionUseCase.execute(new GetChatSessionQuery(id, authentication.getName())));
+    }
+
+    @PatchMapping("/{id}")
+    ChatSessionResponse rename(@PathVariable Long id, @RequestBody RenameChatSessionRequest request, Authentication authentication) {
+        return toResponse(renameChatSessionUseCase.execute(new RenameChatSessionCommand(id, authentication.getName(), request.title())));
+    }
+
+    @PostMapping("/{id}/archive")
+    ChatSessionResponse archive(@PathVariable Long id, Authentication authentication) {
+        return toResponse(archiveChatSessionUseCase.execute(new ArchiveChatSessionCommand(id, authentication.getName())));
+    }
+
+    @PostMapping("/{id}/unarchive")
+    ChatSessionResponse unarchive(@PathVariable Long id, Authentication authentication) {
+        return toResponse(unarchiveChatSessionUseCase.execute(new UnarchiveChatSessionCommand(id, authentication.getName())));
+    }
+
+    @DeleteMapping("/{id}")
+    ResponseEntity<Void> delete(@PathVariable Long id, Authentication authentication) {
+        deleteChatSessionUseCase.execute(new DeleteChatSessionCommand(id, authentication.getName()));
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/messages")
@@ -91,12 +145,14 @@ class ChatController {
     }
 
     private static ChatSessionResponse toResponse(ChatSession session) {
-        return new ChatSessionResponse(session.id(), session.title(), session.createdAt(), session.updatedAt());
+        return new ChatSessionResponse(session.id(), session.title(), session.archived(), session.createdAt(), session.updatedAt());
     }
 
     record SendMessageRequest(String content) {}
 
-    record ChatSessionResponse(Long id, String title, Instant createdAt, Instant updatedAt) {}
+    record RenameChatSessionRequest(String title) {}
+
+    record ChatSessionResponse(Long id, String title, boolean archived, Instant createdAt, Instant updatedAt) {}
 
     record ChatMessageResponse(String role, String content, List<CitationResponse> citations) {}
 

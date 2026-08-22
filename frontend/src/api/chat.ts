@@ -2,8 +2,13 @@ import { api, ApiError, API_BASE_URL } from "./client";
 import type { ChatMessage, ChatSession, Citation } from "./types";
 
 export const chatApi = {
-  list: () => api.get<ChatSession[]>("/api/chats"),
+  list: (archived = false) => api.get<ChatSession[]>(`/api/chats?archived=${archived}`),
+  get: (id: number) => api.get<ChatSession>(`/api/chats/${id}`),
   create: () => api.post<ChatSession>("/api/chats"),
+  rename: (id: number, title: string) => api.patch<ChatSession>(`/api/chats/${id}`, { title }),
+  archive: (id: number) => api.post<ChatSession>(`/api/chats/${id}/archive`),
+  unarchive: (id: number) => api.post<ChatSession>(`/api/chats/${id}/unarchive`),
+  remove: (id: number) => api.delete<void>(`/api/chats/${id}`),
   getMessages: (id: number) => api.get<ChatMessage[]>(`/api/chats/${id}/messages`),
 };
 

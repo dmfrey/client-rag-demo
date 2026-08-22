@@ -19,6 +19,6 @@ class CreateChatSessionService implements CreateChatSessionUseCase {
     @Override
     public ChatSession execute(CreateChatSessionCommand command) {
         Instant now = Instant.now();
-        return saveChatSessionPort.save(new ChatSession(null, command.ownerUsername(), null, now, now));
+        return saveChatSessionPort.save(new ChatSession(null, command.ownerUsername(), null, false, now, now));
     }
 }

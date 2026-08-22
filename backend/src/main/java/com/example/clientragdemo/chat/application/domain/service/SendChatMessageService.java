@@ -82,7 +82,7 @@ class SendChatMessageService implements SendChatMessageUseCase {
         // Every message bumps updated_at, not just the one that also generates a title - the
         // sidebar sorts by this to show most-recently-active sessions first.
         String title = session.title() != null ? session.title() : generateChatTitlePort.generateTitle(firstUserMessage);
-        saveChatSessionPort.save(new ChatSession(session.id(), session.ownerUsername(), title, session.createdAt(), Instant.now()));
+        saveChatSessionPort.save(new ChatSession(session.id(), session.ownerUsername(), title, session.archived(), session.createdAt(), Instant.now()));
     }
 
     private void saveCitations(Long sessionId, List<Citation> citations) {

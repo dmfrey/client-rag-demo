@@ -21,6 +21,7 @@ export interface Document {
 export interface ChatSession {
   id: number;
   title: string | null;
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 }

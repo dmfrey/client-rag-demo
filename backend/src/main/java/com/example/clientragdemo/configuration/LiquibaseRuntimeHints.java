@@ -5,6 +5,7 @@ import liquibase.change.AbstractSQLChange;
 import liquibase.change.AddColumnConfig;
 import liquibase.change.ColumnConfig;
 import liquibase.change.ConstraintsConfig;
+import liquibase.change.core.AddColumnChange;
 import liquibase.change.core.CreateIndexChange;
 import liquibase.change.core.CreateTableChange;
 import liquibase.change.core.RawSQLChange;
@@ -22,7 +23,7 @@ import org.springframework.aot.hint.RuntimeHintsRegistrar;
 // (MissingReflectionRegistrationError at runtime, e.g. SQLFileChange.setRelativeToChangelogFile)
 // - meaning an unregistered type can crash startup even on a pod's Nth restart, long after the
 // changeset itself last ran. Covers exactly the change types this project's changelogs use
-// (createTable, createIndex, sql, sqlFile - see db/changelog/) plus their shared superclasses,
+// (createTable, createIndex, addColumn, sql, sqlFile - see db/changelog/) plus their shared superclasses,
 // since inherited getters/setters (e.g. AbstractSQLChange.setSql) go through the same reflection.
 // Add a class here if a new change type is introduced and native-image startup reports another
 // MissingReflectionRegistrationError.
@@ -32,6 +33,7 @@ public class LiquibaseRuntimeHints implements RuntimeHintsRegistrar {
             AbstractChange.class,
             CreateTableChange.class,
             CreateIndexChange.class,
+            AddColumnChange.class,
             AbstractSQLChange.class,
             RawSQLChange.class,
             SQLFileChange.class,

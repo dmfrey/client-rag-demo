@@ -8,5 +8,5 @@ public interface ListChatSessionsUseCase {
 
     List<ChatSession> execute(ListChatSessionsQuery query);
 
-    record ListChatSessionsQuery(String ownerUsername) {}
+    record ListChatSessionsQuery(String ownerUsername, boolean archived) {}
 }

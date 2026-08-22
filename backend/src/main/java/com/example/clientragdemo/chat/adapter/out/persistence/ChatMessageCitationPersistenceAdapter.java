@@ -1,6 +1,7 @@
 package com.example.clientragdemo.chat.adapter.out.persistence;
 
 import com.example.clientragdemo.chat.application.domain.model.Citation;
+import com.example.clientragdemo.chat.application.port.out.DeleteChatMessageCitationsPort;
 import com.example.clientragdemo.chat.application.port.out.LoadChatMessageCitationsPort;
 import com.example.clientragdemo.chat.application.port.out.SaveChatMessageCitationsPort;
 import org.springframework.stereotype.Component;
@@ -11,7 +12,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
-class ChatMessageCitationPersistenceAdapter implements SaveChatMessageCitationsPort, LoadChatMessageCitationsPort {
+class ChatMessageCitationPersistenceAdapter implements SaveChatMessageCitationsPort, LoadChatMessageCitationsPort, DeleteChatMessageCitationsPort {
 
     private final ChatMessageCitationJdbcRepository repository;
 
@@ -34,5 +35,10 @@ class ChatMessageCitationPersistenceAdapter implements SaveChatMessageCitationsP
                 .collect(Collectors.groupingBy(
                         ChatMessageCitationEntity::messageTimestamp,
                         Collectors.mapping(entity -> new Citation(entity.documentId(), entity.filename()), Collectors.toList())));
+    }
+
+    @Override
+    public void deleteBySession(Long sessionId) {
+        repository.deleteBySessionId(sessionId);
     }
 }

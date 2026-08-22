@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: chat-004-add-archived-to-chat-sessions
+      author: dfrey
+      changes:
+        - addColumn:
+            tableName: chat_sessions
+            columns:
+              - column:
+                  name: archived
+                  type: boolean
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

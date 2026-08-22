@@ -7,4 +7,6 @@ import java.util.List;
 interface ChatMessageCitationJdbcRepository extends ListCrudRepository<ChatMessageCitationEntity, Long> {
 
     List<ChatMessageCitationEntity> findBySessionId(Long sessionId);
+
+    void deleteBySessionId(Long sessionId);
 }

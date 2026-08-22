@@ -6,4 +6,4 @@ import org.springframework.data.relational.core.mapping.Table;
 import java.time.Instant;
 
 @Table("chat_sessions")
-record ChatSessionEntity(@Id Long id, String ownerUsername, String title, Instant createdAt, Instant updatedAt) {}
+record ChatSessionEntity(@Id Long id, String ownerUsername, String title, boolean archived, Instant createdAt, Instant updatedAt) {}

@@ -17,3 +17,6 @@ databaseChangeLog:
   - include:
       file: db/changelog/chat/db.changelog-chat-003.yaml
       relativeToChangelogFile: false
+  - include:
+      file: db/changelog/chat/db.changelog-chat-004.yaml
+      relativeToChangelogFile: false

@@ -6,5 +6,5 @@ import java.util.List;
 
 public interface LoadChatSessionsByOwnerPort {
 
-    List<ChatSession> loadByOwner(String ownerUsername);
+    List<ChatSession> loadByOwner(String ownerUsername, boolean archived);
 }

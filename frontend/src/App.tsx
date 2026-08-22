@@ -6,6 +6,7 @@ import { AppShell } from "./pages/AppShell";
 import { EmptyChatPage } from "./pages/EmptyChatPage";
 import { ChatPage } from "./pages/ChatPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
+import { ArchivePage } from "./pages/ArchivePage";
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
         <Route index element={<EmptyChatPage />} />
         <Route path="chat/:id" element={<ChatPage />} />
         <Route path="documents" element={<DocumentsPage />} />
+        <Route path="archived" element={<ArchivePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
