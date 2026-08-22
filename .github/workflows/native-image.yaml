@@ -44,8 +44,13 @@ jobs:
     # this exact job ran 13:26:12->14:11:30 (45m18s) and GitHub reported it as "cancelled" rather
     # than a timeout failure, which is just how a timeout-triggered kill shows up in the API/UI -
     # worth remembering next time this recurs, since "cancelled" looks like external interference
-    # otherwise. Bumped to 60 with headroom rather than inching up by 5 again.
-    timeout-minutes: 60
+    # otherwise. 60 itself then wasn't enough memory (not time) - two runs failed with a real
+    # OutOfMemoryError/exit-status-30 during native-image's points-to analysis, needing more than
+    # the runner's ~12.7GB allocation. Fixed by forcing single-threaded analysis
+    # (-H:NumberOfThreads=1 in backend/build.gradle's bootBuildImage args) to trade build time for
+    # materially lower peak memory - bumped to 90 minutes here to give that slower, single-threaded
+    # analysis phase room to actually finish rather than getting cut off mid-build.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 

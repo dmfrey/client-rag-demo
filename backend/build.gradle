@@ -138,6 +138,17 @@ tasks.named('bootBuildImage') {
 		// discovered only by a real .docx upload crashing with MissingResourceException. Only this
 		// one exact bundle is registered since it's the only one actually observed failing - add
 		// more here (comma-separated per -H:IncludeResourceBundles) if another one surfaces.
-		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message',
+		// -H:NumberOfThreads=1: the registered reflection surface across OpenAiRuntimeHints
+		// (the whole com.openai.models package) and PoiRuntimeHints/XmlBeansRuntimeHints (POI's
+		// wordprocessingml/drawingml.main + XMLBeans' own built-in schema systems) has grown large
+		// enough that native-image's points-to analysis now needs more peak memory than the
+		// standard GitHub Actions runner's ~12.7GB allocation - a real CI run failed twice in a
+		// row asking for "more than 14.24GB", not a code bug. Analysis parallelizes across
+		// threads, and each thread holds its own working set, so forcing single-threaded analysis
+		// trades build time (still within the workflow's 60-minute budget) for materially lower
+		// peak memory - the standard mitigation for this exact GraalVM symptom on memory-
+		// constrained CI, tried before reaching for the riskier option of narrowing an
+		// already-fixed reflection gap and potentially reintroducing the bug it fixed.
+		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1',
 	]
 }
