@@ -34,6 +34,13 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
         hints.resources().registerPattern("org/apache/poi/schemas/**");
 
+        // org.apache.poi.schemas itself (the "system.ooxml" type-loader infrastructure -
+        // TypeSystemHolder and friends, ~5 classes total, cheap) also needs reflection, not just
+        // the resources above - a shared-namespace type (xml:space/xml:lang, standard XML
+        // boilerplate every schema references) failed to resolve with SchemaTypeLoaderException
+        // even after DocumentDocument/DocumentDocumentImpl (org.openxmlformats.schemas.*, below)
+        // started working, since that infrastructure class itself wasn't reflectively accessible.
+        PackageReflectionHints.registerPackage(hints, classLoader, "org.apache.poi.schemas");
         PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.wordprocessingml");
     }
 }
