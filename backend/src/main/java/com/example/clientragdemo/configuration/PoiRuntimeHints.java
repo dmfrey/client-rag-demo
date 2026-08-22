@@ -54,5 +54,19 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
         // (see git history), so new packages get added one proven-necessary subpackage at a time
         // rather than a whole top-level tree at once.
         PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.drawingml.x2006.main");
+
+        // POIXMLProperties.<clinit> unconditionally instantiates both extendedProperties'
+        // PropertiesDocument (docProps/app.xml - present in every real .docx) and
+        // customProperties' PropertiesDocument (docProps/custom.xml - only present if the author
+        // set custom properties, but the static initializer touches the type either way) before any
+        // document-specific code runs. Being a <clinit> failure, the resulting
+        // ExceptionInInitializerError is an Error, not an Exception - this app's ingestion error
+        // handling only catches RuntimeException, so it went uncaught, leaving the document
+        // permanently stuck at PROCESSING instead of transitioning to FAILED (same uncaught-Error
+        // shape as the CP1252/LocaleUtil charset gap - see build.gradle's
+        // BP_NATIVE_IMAGE_BUILD_ARGUMENTS comment). Both subpackages are tiny (10 and 6 classes) so
+        // registered together rather than waiting for a second failure to prove customProperties too.
+        PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.officeDocument.x2006.extendedProperties");
+        PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.officeDocument.x2006.customProperties");
     }
 }

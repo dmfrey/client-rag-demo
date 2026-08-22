@@ -47,7 +47,12 @@ class ProcessDocumentIngestionService implements ProcessDocumentIngestionUseCase
             int chunkCount = indexDocumentChunksPort.index(command.documentId(), command.filename(), command.content(), command.contentType());
             updateStatus(command.documentId(), DocumentStatus.READY, chunkCount, null);
         }
-        catch (Exception ex) {
+        catch (Throwable ex) {
+            // Throwable, not Exception: a native-image reflection/resource gap surfaces as an
+            // Error (e.g. ExceptionInInitializerError from a POI static initializer touching an
+            // unregistered OOXML schema class), and this method's documented contract above is
+            // that ingestion failure always becomes a FAILED status - an uncaught Error here
+            // leaves the document silently stuck at PROCESSING forever instead.
             logger.warn("Document ingestion failed for document " + command.documentId(), ex);
             updateStatus(command.documentId(), DocumentStatus.FAILED, null, errorMessageOf(ex));
         }
@@ -68,7 +73,7 @@ class ProcessDocumentIngestionService implements ProcessDocumentIngestionUseCase
                 () -> logger.warn("Document " + documentId + " disappeared before ingestion status could be updated"));
     }
 
-    private static String errorMessageOf(Exception ex) {
+    private static String errorMessageOf(Throwable ex) {
         return ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
     }
 }
