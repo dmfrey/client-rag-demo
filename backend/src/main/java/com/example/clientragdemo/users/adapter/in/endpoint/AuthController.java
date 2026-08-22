@@ -41,8 +41,9 @@ class AuthController {
     }
 
     @PostMapping("/register")
-    ResponseEntity<UserResponse> register(@RequestBody AuthRequest request) {
-        User user = registerUserUseCase.execute(new RegisterUserCommand(request.username(), request.password()));
+    ResponseEntity<UserResponse> register(@RequestBody RegisterRequest request) {
+        User user = registerUserUseCase.execute(new RegisterUserCommand(
+                request.username(), request.password(), request.firstName(), request.lastName(), request.email()));
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(user));
     }
 
@@ -67,10 +68,12 @@ class AuthController {
     }
 
     private static UserResponse toResponse(User user) {
-        return new UserResponse(user.id(), user.username());
+        return new UserResponse(user.id(), user.username(), user.firstName(), user.lastName(), user.email());
     }
 
     record AuthRequest(String username, String password) {}
 
-    record UserResponse(Long id, String username) {}
+    record RegisterRequest(String username, String password, String firstName, String lastName, String email) {}
+
+    record UserResponse(Long id, String username, String firstName, String lastName, String email) {}
 }

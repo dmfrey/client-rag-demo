@@ -18,7 +18,8 @@ class UserPersistenceAdapter implements SaveUserPort, LoadUserByUsernamePort {
 
     @Override
     public User save(User user) {
-        UserEntity saved = repository.save(new UserEntity(user.id(), user.username(), user.passwordHash(), user.createdAt()));
+        UserEntity saved = repository.save(new UserEntity(
+                user.id(), user.username(), user.passwordHash(), user.firstName(), user.lastName(), user.email(), user.createdAt()));
         return toDomain(saved);
     }
 
@@ -28,6 +29,6 @@ class UserPersistenceAdapter implements SaveUserPort, LoadUserByUsernamePort {
     }
 
     private static User toDomain(UserEntity entity) {
-        return new User(entity.id(), entity.username(), entity.passwordHash(), entity.createdAt());
+        return new User(entity.id(), entity.username(), entity.passwordHash(), entity.firstName(), entity.lastName(), entity.email(), entity.createdAt());
     }
 }

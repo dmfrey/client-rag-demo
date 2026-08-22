@@ -9,6 +9,9 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -19,7 +22,7 @@ export function RegisterPage() {
     try {
       // Registration alone doesn't establish a session on the backend - log in right after so a
       // new account lands the user straight in the app instead of a second manual login step.
-      await register(username, password);
+      await register({ username, password, firstName, lastName, email });
       await login(username, password);
       navigate("/", { replace: true });
     } catch (err) {
@@ -40,6 +43,38 @@ export function RegisterPage() {
             autoFocus
             value={username}
             onChange={(event) => setUsername(event.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          />
+        </label>
+        <div className="flex gap-3">
+          <label className="flex flex-1 flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
+            First name
+            <input
+              type="text"
+              required
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
+            Last name
+            <input
+              type="text"
+              required
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
+          Email
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             className="rounded-md border border-gray-300 px-3 py-2 text-gray-900 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           />
         </label>

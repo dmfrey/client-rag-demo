@@ -25,7 +25,7 @@ export function UserMenu() {
         </button>
       )}
     >
-      <DropdownMenuItem onClick={() => navigate("/archived")}>🗄️ Archived chats</DropdownMenuItem>
+      <DropdownMenuItem onClick={() => navigate("/settings")}>⚙️ Settings</DropdownMenuItem>
       <DropdownMenuItem onClick={() => void handleLogout()}>Log out</DropdownMenuItem>
     </DropdownMenu>
   );

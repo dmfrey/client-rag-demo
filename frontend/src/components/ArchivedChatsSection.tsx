@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { chatApi } from "../api/chat";
-import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import type { ChatSession } from "../api/types";
 
-export function ArchivePage() {
+export function ArchivedChatsSection() {
   const queryClient = useQueryClient();
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
 
@@ -27,9 +27,7 @@ export function ArchivePage() {
   const sessions = sessionsQuery.data ?? [];
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col gap-6 overflow-y-auto p-6">
-      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Archived chats</h1>
-
+    <div className="flex flex-col gap-4">
       <ul className="flex flex-col divide-y divide-gray-100 dark:divide-gray-900">
         {sessions.map((session) => (
           <li key={session.id} className="flex items-center justify-between gap-4 py-3">

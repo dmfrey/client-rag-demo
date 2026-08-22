@@ -6,5 +6,5 @@ public interface RegisterUserUseCase {
 
     User execute(RegisterUserCommand command);
 
-    record RegisterUserCommand(String username, String password) {}
+    record RegisterUserCommand(String username, String password, String firstName, String lastName, String email) {}
 }

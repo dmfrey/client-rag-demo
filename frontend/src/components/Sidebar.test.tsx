@@ -54,11 +54,12 @@ beforeEach(() => {
   vi.mocked(chatApi.archive).mockResolvedValue({ ...session, archived: true });
   vi.mocked(chatApi.remove).mockResolvedValue(undefined);
   vi.mocked(useAuth).mockReturnValue({
-    user: { id: 1, username: "alice" },
+    user: { id: 1, username: "alice", firstName: null, lastName: null, email: null },
     isLoading: false,
     login: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
+    refreshUser: vi.fn(),
   });
 });
 

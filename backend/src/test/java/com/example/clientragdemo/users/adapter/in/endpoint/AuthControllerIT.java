@@ -30,14 +30,18 @@ class AuthControllerIT {
     void registerLoginMeLogoutFlow() {
         String username = "alice-" + UUID.randomUUID();
         AuthRequest credentials = new AuthRequest(username, "password123");
+        RegisterRequest registration = new RegisterRequest(username, "password123", "Alice", "Anderson", "alice@example.com");
 
-        ResponseEntity<UserResponse> registerResponse = restTemplate.postForEntity("/api/auth/register", credentials, UserResponse.class);
+        ResponseEntity<UserResponse> registerResponse = restTemplate.postForEntity("/api/auth/register", registration, UserResponse.class);
         assertThat(registerResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(registerResponse.getBody()).isNotNull();
         assertThat(registerResponse.getBody().id()).isNotNull();
         assertThat(registerResponse.getBody().username()).isEqualTo(username);
+        assertThat(registerResponse.getBody().firstName()).isEqualTo("Alice");
+        assertThat(registerResponse.getBody().lastName()).isEqualTo("Anderson");
+        assertThat(registerResponse.getBody().email()).isEqualTo("alice@example.com");
 
-        ResponseEntity<String> duplicateResponse = restTemplate.postForEntity("/api/auth/register", credentials, String.class);
+        ResponseEntity<String> duplicateResponse = restTemplate.postForEntity("/api/auth/register", registration, String.class);
         assertThat(duplicateResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
 
         ResponseEntity<String> unauthenticatedMe = restTemplate.getForEntity("/api/auth/me", String.class);
@@ -59,6 +63,9 @@ class AuthControllerIT {
         assertThat(meResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(meResponse.getBody()).isNotNull();
         assertThat(meResponse.getBody().username()).isEqualTo(username);
+        assertThat(meResponse.getBody().firstName()).isEqualTo("Alice");
+        assertThat(meResponse.getBody().lastName()).isEqualTo("Anderson");
+        assertThat(meResponse.getBody().email()).isEqualTo("alice@example.com");
 
         ResponseEntity<Void> logoutResponse = restTemplate.exchange("/api/auth/logout", HttpMethod.POST, authenticatedRequest, Void.class);
         assertThat(logoutResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
@@ -75,5 +82,7 @@ class AuthControllerIT {
 
     private record AuthRequest(String username, String password) {}
 
-    private record UserResponse(Long id, String username) {}
+    private record RegisterRequest(String username, String password, String firstName, String lastName, String email) {}
+
+    private record UserResponse(Long id, String username, String firstName, String lastName, String email) {}
 }

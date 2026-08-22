@@ -1,6 +1,9 @@
 export interface User {
   id: number;
   username: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
 }
 
 export type DocumentContentType = "PDF" | "DOCX" | "TXT";

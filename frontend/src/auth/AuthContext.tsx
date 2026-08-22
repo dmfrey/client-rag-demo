@@ -1,14 +1,15 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { authApi } from "../api/auth";
+import { authApi, type RegisterInput } from "../api/auth";
 import type { User } from "../api/types";
 
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: ({ username, password }: { username: string; password: string }) => authApi.register(username, password),
+    mutationFn: (input: RegisterInput) => authApi.register(input),
   });
 
   const logoutMutation = useMutation({
@@ -45,12 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: async (username, password) => {
       await loginMutation.mutateAsync({ username, password });
     },
-    register: async (username, password) => {
-      await registerMutation.mutateAsync({ username, password });
+    register: async (input) => {
+      await registerMutation.mutateAsync(input);
     },
     logout: async () => {
       await logoutMutation.mutateAsync();
     },
+    refreshUser: (user) => queryClient.setQueryData(ME_QUERY_KEY, user),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

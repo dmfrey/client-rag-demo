@@ -35,8 +35,17 @@ class RegisterUserService implements RegisterUserUseCase {
             throw new UsernameAlreadyTakenException(command.username());
         }
 
-        User user = new User(null, command.username(), passwordEncoder.encode(command.password()), Instant.now());
+        User user = new User(null, command.username(), passwordEncoder.encode(command.password()),
+                blankToNull(command.firstName()), blankToNull(command.lastName()), blankToNull(command.email()), Instant.now());
 
         return saveUserPort.save(user);
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

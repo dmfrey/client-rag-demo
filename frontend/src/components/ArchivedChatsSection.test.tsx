@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ArchivePage } from "./ArchivePage";
+import { ArchivedChatsSection } from "./ArchivedChatsSection";
 import { chatApi } from "../api/chat";
 import type { ChatSession } from "../api/types";
 
@@ -23,12 +23,12 @@ const archivedSession: ChatSession = {
   updatedAt: "2026-01-02T00:00:00Z",
 };
 
-function renderPage() {
+function renderSection() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ArchivePage />
+        <ArchivedChatsSection />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -40,15 +40,15 @@ beforeEach(() => {
   vi.mocked(chatApi.remove).mockResolvedValue(undefined);
 });
 
-describe("ArchivePage", () => {
+describe("ArchivedChatsSection", () => {
   it("lists archived sessions via the archived filter", async () => {
-    renderPage();
+    renderSection();
     await screen.findByText("Old chat");
     expect(chatApi.list).toHaveBeenCalledWith(true);
   });
 
   it("unarchives a session", async () => {
-    renderPage();
+    renderSection();
     await screen.findByText("Old chat");
 
     await userEvent.click(screen.getByRole("button", { name: "Unarchive" }));
@@ -57,7 +57,7 @@ describe("ArchivePage", () => {
   });
 
   it("asks for confirmation before deleting, and only deletes on confirm", async () => {
-    renderPage();
+    renderSection();
     await screen.findByText("Old chat");
 
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -71,7 +71,7 @@ describe("ArchivePage", () => {
 
   it("shows an empty state with no archived chats", async () => {
     vi.mocked(chatApi.list).mockResolvedValue([]);
-    renderPage();
+    renderSection();
     expect(await screen.findByText("No archived chats.")).toBeInTheDocument();
   });
 });

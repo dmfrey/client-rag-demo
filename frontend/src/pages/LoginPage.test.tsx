@@ -36,6 +36,7 @@ describe("LoginPage", () => {
       login,
       register: vi.fn(),
       logout: vi.fn(),
+      refreshUser: vi.fn(),
     });
   });
 
