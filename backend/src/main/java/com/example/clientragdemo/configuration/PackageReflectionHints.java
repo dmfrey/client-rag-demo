@@ -21,9 +21,21 @@ final class PackageReflectionHints {
     }
 
     static void registerPackage(RuntimeHints hints, ClassLoader classLoader, String packageName) {
+        registerPackage(hints, classLoader, packageName, true);
+    }
+
+    // Registers only the classes directly in packageName, not its subpackages - for a third-party
+    // package whose top level holds shared types but whose subpackages are far larger than what
+    // this app actually needs (see OpenAiRuntimeHints, scoped to chat/embeddings subpackages plus
+    // this for com.openai.models' own shared top-level types like ChatModel/ErrorObject).
+    static void registerTopLevelOnly(RuntimeHints hints, ClassLoader classLoader, String packageName) {
+        registerPackage(hints, classLoader, packageName, false);
+    }
+
+    private static void registerPackage(RuntimeHints hints, ClassLoader classLoader, String packageName, boolean recursive) {
         ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver(classLoader);
         MetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory(resolver);
-        String pattern = "classpath*:" + packageName.replace('.', '/') + "/**/*.class";
+        String pattern = "classpath*:" + packageName.replace('.', '/') + (recursive ? "/**/*.class" : "/*.class");
 
         Resource[] resources;
         try {
