@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { chatApi, sendMessageStream } from "../api/chat";
 import type { ChatMessage, Citation } from "../api/types";
 
@@ -125,13 +127,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
           isUser
-            ? "bg-blue-600 text-white"
+            ? "bg-blue-600 text-white whitespace-pre-wrap"
             : "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
         }`}
       >
-        {message.content}
+        {isUser ? message.content : <MarkdownContent content={message.content} />}
         {message.citations.length > 0 && (
           <details className="mt-2 text-xs opacity-80">
             <summary className="cursor-pointer font-medium">Sources</summary>
@@ -143,6 +145,52 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </details>
         )}
       </div>
+    </div>
+  );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="my-2 leading-relaxed">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          ul: ({ children }) => <ul className="my-2 list-inside list-disc space-y-1">{children}</ul>,
+          ol: ({ children }) => <ol className="my-2 list-inside list-decimal space-y-1">{children}</ol>,
+          li: ({ children }) => <li>{children}</li>,
+          h1: ({ children }) => <h1 className="mt-3 mb-2 text-base font-semibold">{children}</h1>,
+          h2: ({ children }) => <h2 className="mt-3 mb-2 text-base font-semibold">{children}</h2>,
+          h3: ({ children }) => <h3 className="mt-3 mb-1 text-sm font-semibold">{children}</h3>,
+          a: ({ children, href }) => (
+            <a href={href} target="_blank" rel="noreferrer" className="text-blue-600 underline dark:text-blue-400">
+              {children}
+            </a>
+          ),
+          code: ({ children }) => (
+            <code className="rounded bg-gray-200 px-1 py-0.5 font-mono text-xs dark:bg-gray-700">{children}</code>
+          ),
+          pre: ({ children }) => (
+            <pre className="my-2 overflow-x-auto rounded bg-gray-200 p-2 font-mono text-xs dark:bg-gray-700">
+              {children}
+            </pre>
+          ),
+          table: ({ children }) => (
+            <div className="my-2 overflow-x-auto">
+              <table className="min-w-full border-collapse text-xs">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => (
+            <thead className="border-b border-gray-300 dark:border-gray-600">{children}</thead>
+          ),
+          tr: ({ children }) => <tr className="border-b border-gray-200 dark:border-gray-700">{children}</tr>,
+          th: ({ children }) => <th className="px-2 py-1 text-left font-semibold">{children}</th>,
+          td: ({ children }) => <td className="px-2 py-1 align-top">{children}</td>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
