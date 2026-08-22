@@ -42,5 +42,17 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
         // started working, since that infrastructure class itself wasn't reflectively accessible.
         PackageReflectionHints.registerPackage(hints, classLoader, "org.apache.poi.schemas");
         PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.wordprocessingml");
+
+        // A .docx with a theme part (colors/fonts - present in any document saved by real Word,
+        // not just ones with explicit drawings) hits the same generic-wrapper ClassCastException
+        // as DocumentDocument above, but for XWPFTheme's ThemeDocument
+        // (org.openxmlformats.schemas.drawingml.x2006.main - 713 classes). Scoped to just the
+        // "main" drawingml subpackage, not the whole drawingml tree (chart/diagram/spreadsheetDrawing
+        // are Excel/PowerPoint-only and this app only accepts PDF/DOCX/TXT) - registering
+        // wordprocessingml+officeDocument+drawingml (all subpackages) together previously caused
+        // the native-image analysis phase's deadlock watchdog to abort a real CI run at ~10GB heap
+        // (see git history), so new packages get added one proven-necessary subpackage at a time
+        // rather than a whole top-level tree at once.
+        PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.drawingml.x2006.main");
     }
 }
