@@ -79,3 +79,10 @@ tasks.named('test') {
     // Same rationale as backend/build.gradle: rootless Podman can't run Ryuk.
     environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
 }
+
+tasks.named('bootBuildImage') {
+    // Separate image name from backend's (ghcr.io/dmfrey/client-rag-demo) - these are two
+    // independently deployed apps sharing one repo, not one app. No BP_NATIVE_IMAGE here,
+    // deliberately - see the comment at the top of this file: this stays a plain JVM image.
+    imageName = "ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:${project.version}"
+}

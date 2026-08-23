@@ -5,9 +5,12 @@ on:
     branches: [ main ]
     # Only backend changes (or changes to this workflow itself) need a rebuild - frontend/docs/
     # manifest-only pushes used to also trigger a full native-image build for no reason, wasting
-    # CI time on an image that ends up byte-identical to the one already published.
+    # CI time on an image that ends up byte-identical to the one already published. ingestion-core
+    # is included too - backend depends on it (see backend/build.gradle), so a library-only change
+    # there still needs a rebuilt backend image even though nothing under backend/ itself changed.
     paths:
       - 'backend/**'
+      - 'ingestion-core/**'
       - '.github/workflows/native-image.yaml'
   workflow_dispatch: {}
 
@@ -28,8 +31,8 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - name: Run backend tests
-        run: ./gradlew :backend:test
+      - name: Run backend and ingestion-core tests
+        run: ./gradlew :backend:test :ingestion-core:test
 
   publish-native-image:
     name: Build and publish native image
