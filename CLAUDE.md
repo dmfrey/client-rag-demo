@@ -4,6 +4,8 @@ Multi-module application targeting Tanzu Platform deployment:
 
 - **`backend/`** — Spring Boot 4.1.1 application (this is the original single-module project; all Gradle/Java content lives here now)
 - **`frontend/`** — React + Vite + TypeScript application
+- **`ingestion-core/`** — plain Java library (no Spring Boot app of its own) holding the hexagonal document-ingestion slice (domain model, ports, JDBC persistence, Tika/chunk/pgvector indexing) shared between `backend` (web upload) and `sharepoint-batch` (SharePoint polling) — see Shared Ingestion Library below
+- **`sharepoint-batch/`** — standalone Spring Boot + Spring Batch service that polls a Microsoft SharePoint document library via Microsoft Graph and (re-)ingests changed files through `ingestion-core`, on its own deployment/schedule separate from `backend` — see SharePoint Batch Service below
 
 ## Tech Stack
 
@@ -203,6 +205,112 @@ The verb-prefixed `Command` name (e.g., `CreateNoteCommand`) keeps commands iden
 7. Implement output adapter(s) in `adapter/out/persistence/` (implement the port)
 8. Wire everything in `<feature>/configuration/`
 9. Add Liquibase changeset(s) in `backend/src/main/resources/db/changelog/`
+
+## Shared Ingestion Library (`ingestion-core/`)
+
+Holds everything both `backend` and `sharepoint-batch` need to turn bytes into an indexed,
+status-tracked document: `Document`/`ContentType`/`DocumentStatus` domain model, the
+`Save`/`LoadById`/`LoadByFilename`/`LoadBySourceAndExternalId`/`LoadAll`/`Delete`
+`DocumentPort`s, `IngestDocumentUseCase`/`DeleteDocumentUseCase`, `DocumentPersistenceAdapter`
+(Spring Data JDBC), and `DocumentIndexingAdapter` (Tika parse → `TokenTextSplitter` chunk →
+`VectorStore.add`). Same hexagonal conventions as every `backend` feature — one difference:
+`IngestionCoreConfiguration` (`@ComponentScan` + `@EnableJdbcRepositories` +
+`@EnableConfigurationProperties`) has to be explicitly `@Import`ed by each consuming app's own
+config, since this module has no `@SpringBootApplication` of its own to auto-scan it.
+
+- **Plain Java library, not a Spring Boot app** — no `org.springframework.boot` plugin, no Boot
+  starters as main dependencies (`ingestion-core/build.gradle` uses `java-library` +
+  `io.spring.dependency-management` importing the same `spring-boot-dependencies`/`spring-ai-bom`
+  versions `backend` uses, so both stay in lockstep). Only the non-starter `spring-ai-model`/
+  `spring-ai-vector-store` API jars are `api` dependencies — each consuming app supplies the real
+  `VectorStore`/`EmbeddingModel` beans from its own starter dependencies, so this module never
+  drags Boot autoconfiguration or a pgvector driver into whatever depends on it.
+- **`Document.source`/`externalId`/`sourceVersion`** (added by `documents-003`, alongside the
+  original `filename`-only tracking from the web-upload-only era) distinguish `UPLOAD` rows
+  (identified by filename, `externalId`/`sourceVersion` null) from `SHAREPOINT` rows (identified
+  by the Graph driveItem id via `LoadDocumentBySourceAndExternalIdPort` — filename can collide
+  across SharePoint folders, a driveItem id can't; `sourceVersion` holds the driveItem's eTag for
+  change detection). The unique constraint moved from `filename` alone to `(source, filename)`.
+- **Schema ownership**: `backend` remains the *sole* Liquibase runner against `documents`/
+  `vector_store` (`ingestion-core`'s changelog is packaged into its jar and referenced by
+  `backend`'s own `db.changelog-master.yaml` via classpath, same cross-jar `sqlFile`/`include`
+  trick already used for `spring-ai-model-chat-memory-repository-jdbc`'s vendor schema).
+  `sharepoint-batch` never runs these changesets itself — only its own (see below) — to avoid two
+  independent Liquibase instances racing over one changelog-lock/history table. Operational
+  consequence: **`sharepoint-batch` must not be pointed at a database `backend` hasn't migrated
+  at least once.**
+- **Testing**: no HTTP layer to test through (that's `backend`'s `DocumentController`), so
+  `ingestion-core`'s own IT (`IngestDocumentServiceIT`) exercises `IngestDocumentUseCase`/
+  `DeleteDocumentUseCase` directly against real Testcontainers Postgres+pgvector+Ollama, via a
+  test-only synthetic `@SpringBootApplication` (`IngestionCoreTestApplication`) that `@Import`s
+  `IngestionCoreConfiguration` — the standard shape for testing a library module that deliberately
+  isn't a Boot app itself.
+
+## SharePoint Batch Service (`sharepoint-batch/`)
+
+Polls a SharePoint document library on a schedule and (re-)ingests changed files through
+`ingestion-core`. One correction worth keeping in mind: there's no GraphQL API for SharePoint —
+Microsoft's modern surface is **Microsoft Graph**, a REST+OData API
+(`com.microsoft.graph:microsoft-graph`, the official Java SDK); "the SharePoint GraphQL client"
+in casual conversation means this.
+
+- **Spring Batch job shape**: `sharePointSyncJob` = `resolveDeltaLinkStep` (tasklet: loads the
+  delta link persisted from the previous poll, or builds the base delta URL on a first-ever run)
+  → `syncStep` (chunk-oriented: `ChangedItemReader` pages Graph's delta query via
+  `ListChangedItemsPort`, `ChangedItemProcessor` finds-or-creates the `Document` row and downloads
+  content via `DownloadItemContentPort`, `ChangedItemWriter` calls `IngestDocumentUseCase`/
+  `DeleteDocumentUseCase`) → `persistDeltaLinkStep` (tasklet: writes the new delta link, only
+  reached after `syncStep` fully succeeds). The delta link travels step-to-step via the **job's**
+  `ExecutionContext` (a step's own `ExecutionContext` isn't visible to other steps) —
+  `ChangedItemReader` reads its start link via `@StepScope`'s `#{jobExecutionContext[...]}` SpEL
+  binding and writes the final one back via `ItemStream#update`, promoted from step to job level
+  by an `ExecutionContextPromotionListener` registered on `syncStep`.
+- **Scheduling**: `@EnableScheduling` + `@Scheduled(cron = "${app.sharepoint.poll-cron}")` calling
+  `JobOperator.startNextInstance(job)` (Spring Batch 6's unified launch API — see the version note
+  below), guarded by `JobOperator.getRunningExecutions(jobName)` so a slow poll can't stack
+  overlapping runs.
+- **Graph/SharePoint specifics stay entirely inside this app** (`sharepoint/adapter/out/graph/`,
+  `sharepoint/configuration/`) — never in `ingestion-core`, which stays source-agnostic. Auth is
+  app-only client-credentials (`com.azure:azure-identity`'s `ClientSecretCredential`, scope
+  `https://graph.microsoft.com/.default`) against an Azure AD app registration with application
+  permission `Sites.Selected` scoped to one site.
+- **Deployment: plain JVM image, not GraalVM native** — deliberately, unlike `backend`. This app
+  would inherit the Tika/POI/XMLBeans native-image reflection fights `backend` already documents
+  above, plus need new hints for the Graph SDK, for no benefit: a scheduled batch job's startup
+  latency doesn't matter the way a request-serving backend's does.
+- **`spring-batch-core` 6.0.5 (pulled in transitively by `spring-boot-starter-batch` under Boot
+  4.1.1) reorganized nearly every core class's package** from the Spring Batch 5.x layout most
+  documentation/examples still show — confirmed by inspecting the actual jars, not assumed:
+  `Job`/`Step` moved to `org.springframework.batch.core.job`/`.step`; `JobParameters(Builder)` to
+  `org.springframework.batch.core.job.parameters`; `JobExplorer` to
+  `org.springframework.batch.core.repository.explore`; `ItemReader`/`Writer`/`Processor`/`Stream`/
+  `ExecutionContext`/`Chunk` all moved out of `org.springframework.batch.item` entirely into
+  `org.springframework.batch.infrastructure.item` (a separate `spring-batch-infrastructure` jar);
+  `RepeatStatus` similarly into `org.springframework.batch.infrastructure.repeat`. Also new in
+  6.0: a unified `JobOperator` (extends `JobLauncher`) is the modern way to launch/inspect jobs,
+  replacing separate `JobLauncher`+`JobExplorer` calls — though at this exact 6.0.5 release
+  `JobLauncher`, `JobOperator`, and `JobOperator.getRunningExecutions` are *themselves* already
+  flagged `@Deprecated(forRemoval=true)`, with no non-deprecated alternative shipped yet (confirmed
+  via `javap`, not a false positive) — this is 6.0's launch API still mid-churn, not something
+  this codebase got wrong; revisit on the next Spring Batch upgrade. `spring-batch-test`'s own
+  package (`org.springframework.batch.test`) is unchanged.
+- **Testing** (no way to test against a real SharePoint tenant — everything below leans on fakes):
+  unit tests for `ChangedItemProcessor` against Mockito-mocked ports
+  (`ChangedItemProcessorTest`); a full-job IT (`SharePointSyncJobIT`, `@SpringBatchTest` +
+  `JobLauncherTestUtils`, real Testcontainers Postgres+pgvector+Ollama for the shared-schema
+  writes) with the Graph side replaced by `FakeListChangedItemsPort`/`FakeDownloadItemContentPort`
+  (`@Primary` test beans — the real Graph adapters are still component-scanned into the test
+  context alongside them, so `@Primary` is what wins the ambiguity, not an exclusion filter),
+  covering a first-ever full-enumeration run and a single-item-skip run; `SyncStateJdbcAdapterIT`
+  for the delta-link persistence round trip. **Not covered**: a restart-after-failure scenario and
+  a mixed incremental add+modify+delete run — real gaps to close before this handles production
+  traffic, not implemented here due to time.
+- **Unverified against a real tenant**: `GraphChangedItemsAdapter`/`GraphItemDownloadAdapter`
+  compile cleanly against the real `microsoft-graph` SDK jar (confirming the method chains/type
+  names are real), but there's no way to confirm the actual request/response shape is correct
+  without a real SharePoint site. The first thing to do once the client supplies tenant/site/drive
+  credentials is a real end-to-end poll against a small test document library, before trusting
+  this against production data.
 
 ## Database Migrations
 

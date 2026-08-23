@@ -1,0 +1,25 @@
+spring:
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-test-master.yaml
+
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+
+app:
+  sharepoint:
+    # Never actually used - FakeListChangedItemsPort/FakeDownloadItemContentPort replace the real
+    # Graph adapters (see their @Primary), but SharePointConfiguration still builds a real
+    # GraphServiceClient bean via component scan (unused), which needs non-blank values here to
+    # construct without error.
+    tenant-id: test-tenant
+    client-id: test-client
+    client-secret: test-secret
+    site-id: test-site
+    drive-id: test-drive
+
+logging:
+  level:
+    com.example.sharepointbatch: debug
+    org.springframework.batch: info

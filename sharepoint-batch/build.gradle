@@ -1,0 +1,81 @@
+// Standalone Spring Batch service - polls a SharePoint document library via Microsoft Graph and
+// (re-)ingests changed files through ingestion-core. Deployed separately from backend (see
+// CLAUDE.md). Deliberately a plain JVM image, not GraalVM native - see this module's
+// configuration/ package for why (backend's CLAUDE.md documents the native-image reflection
+// fights this app would otherwise inherit from Tika/POI/XMLBeans via ingestion-core, on top of
+// new ones for the Graph SDK, for no benefit to a scheduled job's startup latency).
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    set('springAiVersion', "2.0.1")
+}
+
+dependencies {
+    implementation project(':ingestion-core')
+
+    implementation 'org.springframework.boot:spring-boot-starter-batch'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-liquibase'
+
+    // Real VectorStore/EmbeddingModel beans - ingestion-core only depends on the non-starter
+    // spring-ai-vector-store/spring-ai-model API jars (see its build.gradle), so each consuming
+    // app supplies the actual implementation, same as backend does.
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+
+    // Microsoft Graph Java SDK - the actual client for listing/downloading SharePoint drive
+    // items and running delta queries (see sharepoint/adapter/out/graph/). No GraphQL client
+    // exists for SharePoint; Graph is Microsoft's REST+OData surface despite the client's
+    // "graphql" phrasing - see the plan/CLAUDE.md context for this feature.
+    implementation 'com.microsoft.graph:microsoft-graph:6.42.0'
+    implementation 'com.microsoft.graph:microsoft-graph-core:3.6.1'
+    // App-only (client credentials) auth against Azure AD for a headless batch job - no
+    // interactive user in this flow.
+    implementation 'com.azure:azure-identity:1.16.2'
+
+    implementation 'org.postgresql:postgresql'
+
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.batch:spring-batch-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-ollama'
+
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // Same rationale as backend/build.gradle: rootless Podman can't run Ryuk.
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+}

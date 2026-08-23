@@ -1,0 +1,59 @@
+logging:
+  level:
+    org.springframework.batch: info
+    com.example.sharepointbatch: debug
+
+spring:
+  application:
+    name: sharepoint-batch
+
+  batch:
+    jdbc:
+      # Liquibase owns this schema (db/changelog/sharepoint/) - don't let Spring Batch's own
+      # auto-init also try to create it. See db.changelog-sharepoint-001.yaml.
+      initialize-schema: never
+    job:
+      # This app only ever launches sharePointSyncJob on its own schedule (see
+      # SharePointSyncScheduler) - without this, Boot's JobLauncherApplicationRunner would try to
+      # auto-run every Job bean at startup.
+      enabled: false
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+  ai:
+    openai:
+      # No default - every environment needs an explicit SPRING_AI_OPENAI_BASE_URL/_API_KEY, same
+      # as backend (see backend/application.yaml and CLAUDE.md).
+      chat:
+        model: qwen2.5:7b-instruct
+      embedding:
+        model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        # ingestion-core's changelog (run by backend) owns this table - see the master changelog
+        # comment above for why this app must not be pointed at an unmigrated database.
+        initialize-schema: false
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+app:
+  documents:
+    ingestion:
+      # Same property/prefix as backend (see ingestion-core's IngestionProperties) - keep these
+      # two apps' chunk sizes in sync manually per deployment, since they write into the same
+      # vector_store table against the same embedding model's context window limit.
+      chunk-size: 800
+  sharepoint:
+    # tenant-id/client-id/client-secret/site-id/drive-id have no defaults - every deployment
+    # needs its own Azure AD app registration and target site/drive (see SharePointProperties).
+    poll-cron: "0 */15 * * * *"
+    skip-limit: 50

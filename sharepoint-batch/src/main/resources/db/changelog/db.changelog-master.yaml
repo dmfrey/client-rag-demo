@@ -1,0 +1,8 @@
+databaseChangeLog:
+  # Only this app's own tables (Spring Batch's JobRepository schema + sharepoint_sync_state) -
+  # backend remains the sole Liquibase runner against the shared documents/vector_store schema
+  # (see ingestion-core's changelog, referenced only from backend's own master changelog). This
+  # app must not be pointed at a database backend hasn't migrated at least once.
+  - include:
+      file: db/changelog/sharepoint/db.changelog-sharepoint-001.yaml
+      relativeToChangelogFile: false

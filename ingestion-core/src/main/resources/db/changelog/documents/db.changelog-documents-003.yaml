@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: documents-003-add-source-tracking
+      author: dfrey
+      comment: >
+        Tracks where a document came from - UPLOAD (the existing web-upload flow) or SHAREPOINT
+        (sharepoint-batch's polling ingestion, added alongside this changeset). external_id holds
+        the SharePoint Graph driveItem id for SHAREPOINT rows (null for UPLOAD) - it, not
+        filename, is that source's real identity, since a drive item id is stable and globally
+        unique within its drive while filenames can collide across folders. source_version holds
+        the driveItem's eTag, for change detection between polls. The old filename-only unique
+        constraint is replaced with (source, filename) so an uploaded file and a same-named
+        SharePoint file don't collide - this is a starting assumption pending the client's actual
+        SharePoint folder layout; a flat unique-by-filename constraint may need to become
+        path-aware later if their library has same-named files in different folders.
+      changes:
+        - addColumn:
+            tableName: documents
+            columns:
+              - column:
+                  name: source
+                  type: varchar(32)
+                  defaultValue: UPLOAD
+                  constraints:
+                    nullable: false
+              - column:
+                  name: external_id
+                  type: varchar(1024)
+              - column:
+                  name: source_version
+                  type: varchar(255)
+        - dropUniqueConstraint:
+            tableName: documents
+            constraintName: uc_documents_filename
+        - addUniqueConstraint:
+            tableName: documents
+            columnNames: source, filename
+            constraintName: uc_documents_source_filename

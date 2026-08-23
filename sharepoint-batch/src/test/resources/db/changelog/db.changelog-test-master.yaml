@@ -1,0 +1,18 @@
+databaseChangeLog:
+  # Test-only entry point combining both this app's own changelog and ingestion-core's shared
+  # one (both on the test classpath) - in production only backend runs the ingestion-core
+  # changelog (see sharepoint-batch's real db.changelog-master.yaml); this test needs both
+  # schemas in the same ephemeral Testcontainers database since the writer step touches
+  # documents/vector_store too.
+  - include:
+      file: db/changelog/documents/db.changelog-documents-001.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-002.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-003.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/sharepoint/db.changelog-sharepoint-001.yaml
+      relativeToChangelogFile: false

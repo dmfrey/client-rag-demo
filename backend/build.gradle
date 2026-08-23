@@ -26,6 +26,11 @@ ext {
 
 dependencies {
 
+	// Shared hexagonal document-ingestion slice (domain model, ports, Tika/chunk/pgvector
+	// adapter) - also depended on by sharepoint-batch. See ingestion-core/build.gradle and
+	// CLAUDE.md's Backend Architecture section.
+	implementation project(':ingestion-core')
+
 	// Spring Boot dependencies
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'

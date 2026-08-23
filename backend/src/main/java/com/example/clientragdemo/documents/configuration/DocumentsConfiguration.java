@@ -1,13 +1,12 @@
 package com.example.clientragdemo.documents.configuration;
 
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.example.clientragdemo.ingestion.configuration.IngestionCoreConfiguration;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.jdbc.repository.config.EnableJdbcRepositories;
+import org.springframework.context.annotation.Import;
 
 @Configuration
 @ComponentScan(basePackages = "com.example.clientragdemo.documents")
-@EnableJdbcRepositories(basePackages = "com.example.clientragdemo.documents.adapter.out.persistence")
-@EnableConfigurationProperties(DocumentIngestionProperties.class)
+@Import(IngestionCoreConfiguration.class)
 class DocumentsConfiguration {
 }

@@ -1,0 +1,13 @@
+databaseChangeLog:
+  # Test-only entry point - production Liquibase ownership of this schema stays with backend
+  # (see the main changelog files' own comments). Includes this module's own changelog files
+  # directly since they're already on the test classpath (src/main/resources).
+  - include:
+      file: db/changelog/documents/db.changelog-documents-001.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-002.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-003.yaml
+      relativeToChangelogFile: false
