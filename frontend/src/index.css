@@ -16,4 +16,10 @@ body {
   margin: 0;
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* No component (AppShell/<main>/ChatPage's own wrapper) sets a background of its own for the
+     main content pane - only Sidebar does (bg-gray-50 dark:bg-gray-950). Without this, the page
+     canvas stays browser-default white even when the OS is in dark mode, since dark: classes
+     only change text/border colors here, never the page background - text like ChatPage's
+     dark:text-gray-100 session title then renders as near-white text on a white page. */
+  @apply bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100;
 }

@@ -14,6 +14,7 @@ export function UserMenu() {
   return (
     <DropdownMenu
       align="left"
+      position="top"
       trigger={({ onClick }) => (
         <button
           type="button"
