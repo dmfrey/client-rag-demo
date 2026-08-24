@@ -141,17 +141,20 @@ tasks.named('bootBuildImage') {
             // ordering conflict, not a missing-registration gap (backend never hit this with the
             // same charset/resource-bundle/thread-count args above). Fixing individual classes one
             // CI attempt at a time (SubstituteServiceProvider, then NOP_FallbackServiceProvider,
-            // then ch.qos.logback.classic.spi.LogbackServiceProvider - the real provider, not just
-            // the fallback stubs, then org.slf4j.helpers.SubstituteLoggerFactory) kept surfacing
-            // the next class in the same SLF4J provider-resolution family, so this is now the
-            // whole org.slf4j and ch.qos.logback.classic.spi packages rather than continuing to
-            // enumerate individual classes. com.fasterxml.jackson.core.Base64Variant (plus its
-            // nested PaddingReadBehaviour enum - a class-name override doesn't cover a class's own
-            // nested types) hit the identical conflict for an unrelated reason (Jackson's constant
-            // table, not SLF4J), fixed the same way. Forcing all of these to build-time init is
-            // safe: none of them do I/O or hold non-deterministic state, they're exactly the kind
-            // of class GraalVM's own docs recommend overriding to build-time when a
-            // run-time-marked class turns out to already be touched at build time.
-            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j,ch.qos.logback.classic.spi,com.fasterxml.jackson.core.Base64Variant,com.fasterxml.jackson.core.Base64Variant$PaddingReadBehaviour',
+            // then ch.qos.logback.classic.spi.LogbackServiceProvider, then
+            // org.slf4j.helpers.SubstituteLoggerFactory) kept surfacing the next class in the same
+            // family, so this widened to whole-package (org.slf4j, ch.qos.logback.classic.spi) -
+            // which still wasn't enough: ch.qos.logback.classic.LoggerContext (a sibling package,
+            // ch.qos.logback.classic itself rather than its .spi subpackage) hit the identical
+            // conflict on the very next attempt. Widened once more to the whole ch.qos.logback
+            // package rather than continuing to enumerate subpackages one at a time.
+            // com.fasterxml.jackson.core.Base64Variant (plus its nested PaddingReadBehaviour enum -
+            // a class-name override doesn't cover a class's own nested types) hit the identical
+            // conflict for an unrelated reason (Jackson's constant table, not SLF4J), fixed the
+            // same way. Forcing all of these to build-time init is safe: none of them do I/O or
+            // hold non-deterministic state, they're exactly the kind of class GraalVM's own docs
+            // recommend overriding to build-time when a run-time-marked class turns out to already
+            // be touched at build time.
+            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j,ch.qos.logback,com.fasterxml.jackson.core.Base64Variant,com.fasterxml.jackson.core.Base64Variant$PaddingReadBehaviour',
     ]
 }
