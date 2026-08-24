@@ -132,7 +132,7 @@ tasks.named('bootBuildImage') {
     // behind each one).
     environment = [
             'BP_NATIVE_IMAGE': 'true',
-            // --initialize-at-build-time=<these 4>: a real CI run failed with "An object of type
+            // --initialize-at-build-time=<these 5>: a real CI run failed with "An object of type
             // 'org.slf4j.helpers.SubstituteServiceProvider'/'NOP_FallbackServiceProvider'/
             // 'com.fasterxml.jackson.core.Base64Variant' was found in the image heap. This type,
             // however, is marked for initialization at image run time" - these classes ship their
@@ -146,10 +146,12 @@ tasks.named('bootBuildImage') {
             // not just the fallback stubs) hit the identical conflict on the very next CI attempt
             // once the first 3 were fixed - same underlying SLF4J 2.x ServiceLoader-based provider
             // resolution surface, just the one real-provider class the fallback-stub fix didn't
-            // cover. Forcing all 4 to build-time init is safe: none of them do I/O or hold
-            // non-deterministic state, they're exactly the kind of class GraalVM's own docs
-            // recommend overriding to build-time when a run-time-marked class turns out to already
-            // be touched at build time.
-            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j.helpers.SubstituteServiceProvider,org.slf4j.helpers.NOP_FallbackServiceProvider,com.fasterxml.jackson.core.Base64Variant,ch.qos.logback.classic.spi.LogbackServiceProvider',
+            // cover. Base64Variant$PaddingReadBehaviour (a nested enum) hit it again on the attempt
+            // after that - --initialize-at-build-time for a class name doesn't automatically cover
+            // its own nested types, each needs listing explicitly. Forcing all 5 to build-time init
+            // is safe: none of them do I/O or hold non-deterministic state, they're exactly the
+            // kind of class GraalVM's own docs recommend overriding to build-time when a
+            // run-time-marked class turns out to already be touched at build time.
+            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j.helpers.SubstituteServiceProvider,org.slf4j.helpers.NOP_FallbackServiceProvider,com.fasterxml.jackson.core.Base64Variant,com.fasterxml.jackson.core.Base64Variant$PaddingReadBehaviour,ch.qos.logback.classic.spi.LogbackServiceProvider',
     ]
 }
