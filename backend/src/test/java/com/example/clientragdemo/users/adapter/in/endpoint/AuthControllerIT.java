@@ -32,7 +32,18 @@ class AuthControllerIT {
         AuthRequest credentials = new AuthRequest(username, "password123");
         RegisterRequest registration = new RegisterRequest(username, "password123", "Alice", "Anderson", "alice@example.com");
 
-        ResponseEntity<UserResponse> registerResponse = restTemplate.postForEntity("/api/auth/register", registration, UserResponse.class);
+        // BannerAckFilter (see SecurityConfig) gates every non-exempt request, including
+        // /api/auth/register and /api/auth/login, until this session has acknowledged the
+        // consent banner - acknowledge first and carry that session's cookie through every call
+        // below, the same way a real browser persists a session cookie across a request
+        // sequence (TestRestTemplate doesn't do this automatically, unlike a browser).
+        ResponseEntity<Void> ackResponse = restTemplate.postForEntity("/api/banner/ack", null, Void.class);
+        assertThat(ackResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        String bannerCookie = ackResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        assertThat(bannerCookie).isNotNull();
+        HttpEntity<RegisterRequest> registerRequest = new HttpEntity<>(registration, cookieHeaders(bannerCookie));
+
+        ResponseEntity<UserResponse> registerResponse = restTemplate.postForEntity("/api/auth/register", registerRequest, UserResponse.class);
         assertThat(registerResponse.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(registerResponse.getBody()).isNotNull();
         assertThat(registerResponse.getBody().id()).isNotNull();
@@ -41,22 +52,28 @@ class AuthControllerIT {
         assertThat(registerResponse.getBody().lastName()).isEqualTo("Anderson");
         assertThat(registerResponse.getBody().email()).isEqualTo("alice@example.com");
 
-        ResponseEntity<String> duplicateResponse = restTemplate.postForEntity("/api/auth/register", registration, String.class);
+        ResponseEntity<String> duplicateResponse = restTemplate.postForEntity("/api/auth/register", registerRequest, String.class);
         assertThat(duplicateResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
 
         ResponseEntity<String> unauthenticatedMe = restTemplate.getForEntity("/api/auth/me", String.class);
         assertThat(unauthenticatedMe.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 
-        ResponseEntity<String> badLogin = restTemplate.postForEntity("/api/auth/login", new AuthRequest(username, "wrong-password"), String.class);
+        HttpEntity<AuthRequest> badLoginRequest = new HttpEntity<>(new AuthRequest(username, "wrong-password"), cookieHeaders(bannerCookie));
+        ResponseEntity<String> badLogin = restTemplate.postForEntity("/api/auth/login", badLoginRequest, String.class);
         assertThat(badLogin.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 
-        ResponseEntity<UserResponse> loginResponse = restTemplate.postForEntity("/api/auth/login", credentials, UserResponse.class);
+        HttpEntity<AuthRequest> loginRequest = new HttpEntity<>(credentials, cookieHeaders(bannerCookie));
+        ResponseEntity<UserResponse> loginResponse = restTemplate.postForEntity("/api/auth/login", loginRequest, UserResponse.class);
         assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(loginResponse.getBody()).isNotNull();
         assertThat(loginResponse.getBody().username()).isEqualTo(username);
 
-        String sessionCookie = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
-        assertThat(sessionCookie).isNotNull();
+        // Login doesn't always issue a new Set-Cookie - only when Spring Security's
+        // session-fixation protection actually changes the session ID, which it doesn't do on
+        // every request. Reuse the banner-ack cookie in that case; either way the banner-ack
+        // attribute is present on whichever session ID is now current.
+        String loginCookie = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String sessionCookie = (loginCookie != null) ? loginCookie : bannerCookie;
 
         HttpEntity<Void> authenticatedRequest = new HttpEntity<>(cookieHeaders(sessionCookie));
         ResponseEntity<UserResponse> meResponse = restTemplate.exchange("/api/auth/me", HttpMethod.GET, authenticatedRequest, UserResponse.class);
