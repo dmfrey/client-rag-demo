@@ -132,7 +132,7 @@ tasks.named('bootBuildImage') {
     // behind each one).
     environment = [
             'BP_NATIVE_IMAGE': 'true',
-            // --initialize-at-build-time=<these 3>: a real CI run failed with "An object of type
+            // --initialize-at-build-time=<these 4>: a real CI run failed with "An object of type
             // 'org.slf4j.helpers.SubstituteServiceProvider'/'NOP_FallbackServiceProvider'/
             // 'com.fasterxml.jackson.core.Base64Variant' was found in the image heap. This type,
             // however, is marked for initialization at image run time" - these classes ship their
@@ -142,10 +142,14 @@ tasks.named('bootBuildImage') {
             // backend's classpath) actually touches them during the build-time analysis phase
             // anyway - a class-initialization ordering conflict, not a missing-registration gap
             // (backend never hit this with the same charset/resource-bundle/thread-count args
-            // above). Forcing these specific 3 to build-time init is safe: none of them do I/O or
-            // hold non-deterministic state, they're exactly the kind of class GraalVM's own docs
+            // above). ch.qos.logback.classic.spi.LogbackServiceProvider (the real SLF4J provider,
+            // not just the fallback stubs) hit the identical conflict on the very next CI attempt
+            // once the first 3 were fixed - same underlying SLF4J 2.x ServiceLoader-based provider
+            // resolution surface, just the one real-provider class the fallback-stub fix didn't
+            // cover. Forcing all 4 to build-time init is safe: none of them do I/O or hold
+            // non-deterministic state, they're exactly the kind of class GraalVM's own docs
             // recommend overriding to build-time when a run-time-marked class turns out to already
             // be touched at build time.
-            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j.helpers.SubstituteServiceProvider,org.slf4j.helpers.NOP_FallbackServiceProvider,com.fasterxml.jackson.core.Base64Variant',
+            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j.helpers.SubstituteServiceProvider,org.slf4j.helpers.NOP_FallbackServiceProvider,com.fasterxml.jackson.core.Base64Variant,ch.qos.logback.classic.spi.LogbackServiceProvider',
     ]
 }
