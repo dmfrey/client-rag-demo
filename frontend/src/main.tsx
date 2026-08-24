@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider } from "./auth/AuthContext.tsx";
+import { BannerGate } from "./banner/BannerGate.tsx";
 
 const queryClient = new QueryClient();
 
@@ -12,9 +13,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <BannerGate>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BannerGate>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,
