@@ -71,6 +71,15 @@ dependencies {
     // Database dependencies
     implementation 'org.postgresql:postgresql'
 
+    // org.eclipse.angus:angus-activation (pulled in transitively via jaxb-core, used by Tika/POI
+    // for XML/OOXML parsing via ingestion-core, nothing to do with email) registers a
+    // native-image Feature that unconditionally references jakarta.mail.Part - without that class
+    // on the classpath, native-image generation itself fails with NoClassDefFoundError even
+    // though this app never sends or parses email. Just the API is needed to satisfy the class
+    // lookup; no implementation/runtime mail functionality is used. Same gap backend's own
+    // build.gradle already documents/fixes - see its comment there for the full story.
+    runtimeOnly 'jakarta.mail:jakarta.mail-api:2.1.3'
+
     // SharePoint dependencies
     // Microsoft Graph Java SDK - the actual client for listing/downloading SharePoint drive
     // items and running delta queries (see sharepoint/adapter/out/graph/). No GraphQL client
