@@ -51,7 +51,16 @@ class BannerAckFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        response.sendError(SC_PRECONDITION_REQUIRED, "Consent banner must be acknowledged");
+        // Deliberately not response.sendError(...): that triggers a servlet-container forward to
+        // /error, which re-enters the *entire* filter chain (including Spring Security) for the
+        // forwarded dispatch. /error isn't permitAll'd, so on an unauthenticated request Spring
+        // Security's own authenticationEntryPoint (see SecurityConfig) fires for that forwarded
+        // request and overwrites this 428 with its own 401 before it ever reaches the client -
+        // confirmed against a real request, not assumed. Writing the response directly bypasses
+        // that forward entirely.
+        response.setStatus(SC_PRECONDITION_REQUIRED);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"error\":\"Consent banner must be acknowledged\"}");
     }
 
     private boolean isExempt(HttpServletRequest request) {
