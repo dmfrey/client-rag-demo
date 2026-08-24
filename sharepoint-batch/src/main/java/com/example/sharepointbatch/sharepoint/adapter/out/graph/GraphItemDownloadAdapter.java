@@ -1,8 +1,10 @@
 package com.example.sharepointbatch.sharepoint.adapter.out.graph;
 
 import com.example.sharepointbatch.sharepoint.application.port.out.DownloadItemContentPort;
+import com.example.sharepointbatch.sharepoint.configuration.IngestionSourceProperties;
 import com.example.sharepointbatch.sharepoint.configuration.SharePointProperties;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -12,6 +14,7 @@ import java.io.UncheckedIOException;
 // See GraphChangedItemsAdapter's note on this adapter family being unverified against a real
 // tenant - the driveItem content-stream download path here is the other half of that.
 @Component
+@ConditionalOnProperty(prefix = "app.ingestion", name = "source", havingValue = IngestionSourceProperties.GRAPH, matchIfMissing = true)
 class GraphItemDownloadAdapter implements DownloadItemContentPort {
 
     private final GraphServiceClient graphServiceClient;

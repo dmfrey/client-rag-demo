@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: sharepoint-002-create-task-schema
+      author: dfrey
+      comment: >
+        Spring Cloud Task's own schema (TASK_EXECUTION/TASK_EXECUTION_PARAMS/TASK_TASK_BATCH/etc.
+        - the last of these correlates a TASK_EXECUTION row with this job's own
+        BATCH_JOB_EXECUTION row, via spring-cloud-task-batch's TaskBatchExecutionListener),
+        referenced directly from the spring-cloud-task-core jar rather than copied here - same
+        vendor-file-reference convention as sharepoint-001's Spring Batch schema and backend's
+        chat-memory-jdbc schema. spring.cloud.task.initialize-enabled is set to never so Spring
+        Cloud Task doesn't also try to create these tables itself.
+      changes:
+        - sqlFile:
+            path: org/springframework/cloud/task/schema-postgresql.sql
+            relativeToChangelogFile: false

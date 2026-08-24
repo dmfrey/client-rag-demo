@@ -32,6 +32,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * skip (job still completes). Does not cover a restart-after-failure scenario or an
  * incremental/mixed add+modify+delete run - a gap worth closing before this goes into production
  * use, not implemented here due to time.
+ *
+ * NOTE: the "get the syncStep's StepExecution out of a JobExecution" lookup deliberately lives in
+ * the separate StepExecutionLookup class (not a private method here) - @SpringBatchTest's
+ * StepScopeTestExecutionListener reflectively scans this test class's own declared methods for
+ * ANY method whose return type is StepExecution (matched by return type alone, not by name -
+ * confirmed by decompiling the listener itself) and invokes whichever one it finds with zero
+ * arguments to establish step-scope test context. A local helper method returning StepExecution,
+ * regardless of what it's named or how many parameters it takes, gets swept up by that scan and
+ * breaks every test in the class with "Could not create step execution from method: <name>" - a
+ * genuine gotcha, not a naming mistake to just rename around.
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -82,7 +92,7 @@ class SharePointSyncJobIT {
 
         assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
 
-        StepExecution syncStep = stepExecution(jobExecution, "syncStep");
+        StepExecution syncStep = StepExecutionLookup.syncStep(jobExecution);
         assertThat(syncStep.getReadCount()).isEqualTo(2);
         assertThat(syncStep.getWriteCount()).isEqualTo(2);
         assertThat(syncStep.getSkipCount()).isZero();
@@ -117,7 +127,7 @@ class SharePointSyncJobIT {
 
         assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
 
-        StepExecution syncStep = stepExecution(jobExecution, "syncStep");
+        StepExecution syncStep = StepExecutionLookup.syncStep(jobExecution);
         assertThat(syncStep.getWriteCount()).isEqualTo(1);
         assertThat(syncStep.getSkipCount()).isEqualTo(1);
 
@@ -128,12 +138,5 @@ class SharePointSyncJobIT {
 
         assertThat(loadDocumentBySourceAndExternalIdPort
                 .loadBySourceAndExternalId(Document.SOURCE_SHAREPOINT, "item-4")).isEmpty();
-    }
-
-    private static StepExecution stepExecution(JobExecution jobExecution, String stepName) {
-        return jobExecution.getStepExecutions().stream()
-                .filter(step -> step.getStepName().equals(stepName))
-                .findFirst()
-                .orElseThrow();
     }
 }

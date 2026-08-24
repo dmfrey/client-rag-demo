@@ -58,6 +58,11 @@ dependencies {
     api 'org.springframework:spring-tx'
     api 'org.springframework.data:spring-data-jdbc'
     api 'org.springframework.boot:spring-boot'
+    // Just for @ConditionalOnMissingBean on IngestionJdbcConfiguration's jdbcDialect() override -
+    // lets a consumer with its own explicit JdbcDialect bean (backend's JdbcDialectConfig) take
+    // precedence over this module's default, without pulling any actual autoconfiguration classes
+    // into play (this module still has none of its own @EnableAutoConfiguration processing).
+    api 'org.springframework.boot:spring-boot-autoconfigure'
 
     // Non-starter Spring AI artifacts only (spring-ai-model: org.springframework.ai.document.Document,
     // TokenTextSplitter; spring-ai-vector-store: VectorStore, FilterExpressionBuilder) - the

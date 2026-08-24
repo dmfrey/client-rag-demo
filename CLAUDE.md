@@ -244,7 +244,39 @@ config, since this module has no `@SpringBootApplication` of its own to auto-sca
   `DeleteDocumentUseCase` directly against real Testcontainers Postgres+pgvector+Ollama, via a
   test-only synthetic `@SpringBootApplication` (`IngestionCoreTestApplication`) that `@Import`s
   `IngestionCoreConfiguration` — the standard shape for testing a library module that deliberately
-  isn't a Boot app itself.
+  isn't a Boot app itself. A test-scope-only gotcha found here: Ollama's OpenAI-compatible
+  endpoint 404s ("model not found, try pulling it first") unless
+  `spring.ai.openai.embedding.model` explicitly matches whatever
+  `TestcontainersConfiguration` actually pulled (`nomic-embed-text`) — leaving it unset doesn't
+  fall back to that model, it falls back to Spring AI's own OpenAI default
+  (`text-embedding-ada-002`), which was never pulled. Set in both `ingestion-core`'s and
+  `sharepoint-batch`'s test `application.yaml`.
+- **`IngestionCoreConfiguration` supplies its own `JdbcAggregateOperations`
+  (`IngestionJdbcConfiguration extends AbstractJdbcConfiguration`), rather than relying on the
+  consuming app's own `JdbcRepositoriesAutoConfiguration`** — found necessary after the exact same
+  failure (`Cannot resolve reference to bean 'JdbcAggregateOperations'` on
+  `DocumentJdbcRepository`) recurred through three *different* mechanisms across three different
+  consuming-app contexts: CF's `java_buildpack` injecting `java-cfenv` (see SharePoint Batch
+  Service below), `sharepoint-batch`'s own now-removed `@EnableBatchProcessing` (which bypasses
+  Boot's `BatchAutoConfiguration` entirely), and `spring-cloud-task-batch`'s own autoconfiguration
+  racing `@EnableJdbcRepositories`'s eager repository-FactoryBean creation. Boot's
+  `JdbcRepositoriesAutoConfiguration` is deferred until *after* regular `@Configuration` classes
+  are processed, but `@EnableJdbcRepositories` (used by `IngestionCoreConfiguration` directly, not
+  via autoconfiguration) creates its repository FactoryBean eagerly in that earlier pass — a
+  chicken-and-egg ordering race that happened to resolve correctly often enough to look solid,
+  until some new autoconfiguration class in a *particular* consuming app shifted bean-creation
+  order enough to expose it. A library depended on by multiple apps with different
+  autoconfiguration profiles shouldn't rely on getting this right by accident in every one of
+  them. `IngestionJdbcConfiguration` overrides just `jdbcDialect()` with
+  `@ConditionalOnMissingBean(JdbcDialect.class)` so it still defers to `backend`'s own explicit
+  `JdbcDialectConfig` (added for a *different*, AOT-specific reason — see GraalVM native image
+  below) rather than double-defining that one bean, which otherwise fails outright with
+  `BeanDefinitionOverrideException` under AOT's stricter bean-registration pass (caught by
+  `:backend:processTestAot`, not assumed).
+- **`documents-004` makes `uploaded_by` nullable** — it was `NOT NULL` from the original
+  web-upload-only design (`documents-001`), before `SOURCE_SHAREPOINT`/other automated-ingestion
+  rows existed; those legitimately have no human uploader. Caught by `IngestDocumentServiceIT`
+  failing with a real `DataIntegrityViolationException` against a real Postgres, not assumed.
 
 ## SharePoint Batch Service (`sharepoint-batch/`)
 
@@ -265,19 +297,68 @@ in casual conversation means this.
   `ChangedItemReader` reads its start link via `@StepScope`'s `#{jobExecutionContext[...]}` SpEL
   binding and writes the final one back via `ItemStream#update`, promoted from step to job level
   by an `ExecutionContextPromotionListener` registered on `syncStep`.
-- **Scheduling**: `@EnableScheduling` + `@Scheduled(cron = "${app.sharepoint.poll-cron}")` calling
-  `JobOperator.startNextInstance(job)` (Spring Batch 6's unified launch API — see the version note
-  below), guarded by `JobOperator.getRunningExecutions(jobName)` so a slow poll can't stack
-  overlapping runs.
+- **Deployment model: a Spring Cloud Task, not a long-running service** — `SharepointBatchApplication`
+  is `@EnableTask` + `spring-cloud-starter-task` (pulling in `spring-cloud-task-batch`), not
+  `@EnableScheduling`. `TaskJobLauncherApplicationRunner` (from `spring-cloud-task-batch`) launches
+  `sharePointSyncJob` once at startup and the JVM exits when it's done — there's deliberately no
+  web starter on the classpath (Boot infers `WebApplicationType.NONE`), since a persistent process
+  with nothing to keep it alive would just be dead weight. `sharePointSyncJob`'s
+  `.incrementer(new RunIdIncrementer())` gives each fresh JVM invocation a unique `run.id`
+  automatically, since there's no `@Scheduled` loop supplying one — every invocation is a brand
+  new process with no CLI-supplied `JobParameters` of its own. On Cloud Foundry this deploys as a
+  **CF Task** (`cf run-task client-rag-demo-sharepoint-batch`, see `manifest.yml` — pushed with
+  `instances: 0`, never started as a running app) triggered by an *external* scheduler (Scheduler
+  for VMware Tanzu, or plain cron calling `cf run-task`); this app no longer schedules itself
+  internally. Needs its own schema on top of Spring Batch's — `TASK_EXECUTION`/
+  `TASK_EXECUTION_PARAMS`/`TASK_TASK_BATCH`/etc. (`db.changelog-sharepoint-002.yaml`, same
+  vendor-`sqlFile` convention as Spring Batch's own schema, `spring.cloud.task.initialize-enabled: false`
+  so Liquibase stays the sole owner) — `TASK_TASK_BATCH` is what correlates a `TASK_EXECUTION` row
+  with the job's own `BATCH_JOB_EXECUTION` row. Tests override `spring.batch.job.enabled: false`
+  (the opposite of production) so the job doesn't auto-fire at context startup before each test's
+  own `@BeforeEach`/`JobLauncherTestUtils.launchJob(...)` gets to run.
 - **Graph/SharePoint specifics stay entirely inside this app** (`sharepoint/adapter/out/graph/`,
   `sharepoint/configuration/`) — never in `ingestion-core`, which stays source-agnostic. Auth is
   app-only client-credentials (`com.azure:azure-identity`'s `ClientSecretCredential`, scope
   `https://graph.microsoft.com/.default`) against an Azure AD app registration with application
   permission `Sites.Selected` scoped to one site.
+- **A second, filesystem-backed ingestion source exists alongside Graph** — `app.ingestion.source`
+  (`graph`, default, or `filesystem`) picks between `GraphChangedItemsAdapter`/
+  `GraphItemDownloadAdapter` and `FilesystemChangedItemsAdapter`/`FilesystemItemDownloadAdapter`
+  (`sharepoint/adapter/out/filesystem/`), each pair `@ConditionalOnProperty`-gated so only one is
+  ever wired in — including the `GraphServiceClient` bean itself, so a filesystem-only deployment
+  never needs real Graph credentials. This is a genuine alternative production input (the client
+  themselves floated an NFS-style mount as a possible SharePoint substitute), not just test
+  scaffolding, tested end-to-end against a real Cloud Foundry `block-storage` volume service and a
+  real document corpus. A plain filesystem has no delta-link/eTag concept, so
+  `FilesystemChangedItemsAdapter` always does one full recursive scan per invocation (size+mtime
+  stands in for `eTag`) and **does not detect deletions** — a real gap before this becomes more
+  than a one-off test. The container mount path a bound volume service gets is only knowable
+  *after* binding (`cf env <app>`'s `VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir`
+  — CF assigns a GUID-based path, there's no way to request one via bind parameters for this
+  broker), so `APP_FILESYSTEM_SOURCE_PATH` has to be set manually per fresh bind; see the
+  `manifest.yml` comment.
 - **Deployment: plain JVM image, not GraalVM native** — deliberately, unlike `backend`. This app
   would inherit the Tika/POI/XMLBeans native-image reflection fights `backend` already documents
-  above, plus need new hints for the Graph SDK, for no benefit: a scheduled batch job's startup
+  above, plus need new hints for the Graph SDK, for no benefit: a short-lived task's startup
   latency doesn't matter the way a request-serving backend's does.
+- **`java_buildpack` breaks `@EnableJdbcRepositories` outright unless explicitly told not to
+  "help"** — unlike `backend`'s Docker/native-image path, `java_buildpack` unconditionally adds
+  `java-cfenv-boot` (on-disk component name `java_cf_env`, confirmed via `cf run-task` shelling
+  out to `find` — `cf ssh` was blocked in the environment this was debugged from, `cf run-task`
+  wasn't, and turned out to be the more reliable diagnostic tool anyway since it doesn't need an
+  interactively-reachable running instance) to the classpath whenever it detects bound services.
+  Its `CloudProfileApplicationListener` activates a `cloud` Spring profile and rebinds the
+  datasource from `VCAP_SERVICES`, which broke `ingestion-core`'s `@EnableJdbcRepositories` wiring
+  outright on the very first real deploy (`JdbcAggregateOperations` bean not found — see
+  `IngestionJdbcConfiguration` above, which is the durable fix; disabling this buildpack component
+  is still worth doing regardless, since the datasource rebind itself is redundant here). The fix
+  for *this* symptom is the buildpack's own documented per-component opt-out,
+  `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'` — note this is *not* the same as the older,
+  differently-named `JBP_CONFIG_SPRING_AUTO_RECONFIGURATION` (a legacy, unrelated framework
+  component with zero effect on this buildpack version despite the superficially similar purpose —
+  tried first, confirmed to do nothing here). This app already configures its datasource
+  explicitly via `SPRING_DATASOURCE_*` env vars, so the buildpack's own auto-reconfiguration was
+  always redundant.
 - **`spring-batch-core` 6.0.5 (pulled in transitively by `spring-boot-starter-batch` under Boot
   4.1.1) reorganized nearly every core class's package** from the Spring Batch 5.x layout most
   documentation/examples still show — confirmed by inspecting the actual jars, not assumed:
@@ -304,7 +385,16 @@ in casual conversation means this.
   covering a first-ever full-enumeration run and a single-item-skip run; `SyncStateJdbcAdapterIT`
   for the delta-link persistence round trip. **Not covered**: a restart-after-failure scenario and
   a mixed incremental add+modify+delete run — real gaps to close before this handles production
-  traffic, not implemented here due to time.
+  traffic, not implemented here due to time. One gotcha worth knowing before adding more
+  `@SpringBatchTest` test methods: its `StepScopeTestExecutionListener` reflectively scans the
+  test class's own declared methods for *any* method whose return type is `StepExecution` —
+  matched by return type alone, not by name — and invokes whichever one it finds with zero
+  arguments to set up step-scope test context. A local helper method that happens to return
+  `StepExecution` (regardless of what it's called or how many parameters it takes) gets swept up
+  and breaks every test in the class with `Could not create step execution from method: <name>`;
+  confirmed by decompiling the listener, not guessed. `StepExecutionLookup` is a separate
+  (non-nested) class for exactly this reason — renaming the method doesn't help, since the match
+  isn't name-based.
 - **Unverified against a real tenant**: `GraphChangedItemsAdapter`/`GraphItemDownloadAdapter`
   compile cleanly against the real `microsoft-graph` SDK jar (confirming the method chains/type
   names are real), but there's no way to confirm the actual request/response shape is correct

@@ -1,9 +1,12 @@
-// Standalone Spring Batch service - polls a SharePoint document library via Microsoft Graph and
-// (re-)ingests changed files through ingestion-core. Deployed separately from backend (see
-// CLAUDE.md). Deliberately a plain JVM image, not GraalVM native - see this module's
+// Spring Cloud Task application (see SharepointBatchApplication's @EnableTask) - polls a
+// SharePoint document library via Microsoft Graph and (re-)ingests changed files through
+// ingestion-core, then exits. Deployed as a Cloud Foundry Task (`cf run-task`, triggered
+// periodically by an external scheduler - see manifest.yml), not a long-running app: no web
+// server/actuator (see the dependency list below - deliberately no webmvc/actuator), no internal
+// @Scheduled loop. Deliberately a plain JVM image, not GraalVM native - see this module's
 // configuration/ package for why (backend's CLAUDE.md documents the native-image reflection
 // fights this app would otherwise inherit from Tika/POI/XMLBeans via ingestion-core, on top of
-// new ones for the Graph SDK, for no benefit to a scheduled job's startup latency).
+// new ones for the Graph SDK, for no benefit to a short-lived task's startup latency).
 plugins {
     id 'java'
     id 'org.springframework.boot' version '4.1.1'
@@ -25,22 +28,47 @@ repositories {
 
 ext {
     set('springAiVersion', "2.0.1")
+    set('springCloudVersion', "2025.1.3")
 }
 
 dependencies {
+
     implementation project(':ingestion-core')
 
+    // Spring Boot dependencies
+    // Deliberately no spring-boot-starter-webmvc/actuator - this is a Spring Cloud Task app (see
+    // SharepointBatchApplication), not a web app. Without a web starter on the classpath, Boot
+    // infers WebApplicationType.NONE automatically, so the JVM exits cleanly once
+    // TaskJobLauncherApplicationRunner (from spring-cloud-task-batch, below) finishes the job
+    // instead of an embedded Tomcat keeping the process alive forever - the whole point of
+    // running this as a `cf run-task` rather than a long-lived pushed app.
     implementation 'org.springframework.boot:spring-boot-starter-batch'
-    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-liquibase'
 
+    // Spring AI Dependencies
     // Real VectorStore/EmbeddingModel beans - ingestion-core only depends on the non-starter
     // spring-ai-vector-store/spring-ai-model API jars (see its build.gradle), so each consuming
     // app supplies the actual implementation, same as backend does.
     implementation 'org.springframework.ai:spring-ai-starter-model-openai'
     implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 
+    // Spring Cloud dependencies
+    // spring-cloud-starter-task pulls in spring-cloud-task-batch, whose
+    // TaskJobLauncherApplicationRunner replaces Boot's own JobLauncherApplicationRunner - it runs
+    // sharePointSyncJob synchronously at startup, sets the process exit code from the job's
+    // outcome, and correlates the TASK_EXECUTION row with the job's BATCH_JOB_EXECUTION row (see
+    // db.changelog-sharepoint-002.yaml for the schema this needs).
+    implementation 'org.springframework.cloud:spring-cloud-starter-task'
+
+    // Developer Tools
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Database dependencies
+    implementation 'org.postgresql:postgresql'
+
+    // SharePoint dependencies
     // Microsoft Graph Java SDK - the actual client for listing/downloading SharePoint drive
     // items and running delta queries (see sharepoint/adapter/out/graph/). No GraphQL client
     // exists for SharePoint; Graph is Microsoft's REST+OData surface despite the client's
@@ -51,12 +79,7 @@ dependencies {
     // interactive user in this flow.
     implementation 'com.azure:azure-identity:1.16.2'
 
-    implementation 'org.postgresql:postgresql'
-
-    developmentOnly 'org.springframework.boot:spring-boot-devtools'
-
-    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
-
+    // Test dependencies
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.batch:spring-batch-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
@@ -71,6 +94,7 @@ dependencies {
 dependencyManagement {
     imports {
         mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
     }
 }
 

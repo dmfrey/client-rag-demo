@@ -1,8 +1,27 @@
 spring:
+  batch:
+    # Production leaves this at its default (true) so TaskJobLauncherApplicationRunner
+    # auto-launches sharePointSyncJob at startup (see main application.yaml) - tests override it
+    # back to false so the job doesn't also auto-fire at context startup (against whatever fake
+    # state happens to be configured at that moment, before each test's own @BeforeEach runs) in
+    # addition to each test's own explicit JobLauncherTestUtils.launchJob(...) call.
+    job:
+      enabled: false
+
+  cloud:
+    task:
+      initialize-enabled: false
+
   liquibase:
     change-log: classpath:db/changelog/db.changelog-test-master.yaml
 
   ai:
+    openai:
+      embedding:
+        # Same rationale as ingestion-core's test config - must match the model
+        # TestcontainersConfiguration actually pulls into the Ollama container, or Spring AI
+        # falls back to its own default model name and Ollama 404s on it.
+        model: nomic-embed-text
     vectorstore:
       pgvector:
         initialize-schema: false

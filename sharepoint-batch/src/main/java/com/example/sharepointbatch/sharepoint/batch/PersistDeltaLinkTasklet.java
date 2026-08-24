@@ -1,5 +1,6 @@
 package com.example.sharepointbatch.sharepoint.batch;
 
+import com.example.sharepointbatch.sharepoint.configuration.IngestionSourceProperties;
 import com.example.sharepointbatch.sharepoint.configuration.SharePointProperties;
 import org.springframework.batch.core.step.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
@@ -15,11 +16,14 @@ import org.springframework.stereotype.Component;
 class PersistDeltaLinkTasklet implements Tasklet {
 
     private final SyncStatePort syncStatePort;
-    private final SharePointProperties properties;
+    private final SharePointProperties sharePointProperties;
+    private final IngestionSourceProperties ingestionSourceProperties;
 
-    PersistDeltaLinkTasklet(SyncStatePort syncStatePort, SharePointProperties properties) {
+    PersistDeltaLinkTasklet(SyncStatePort syncStatePort, SharePointProperties sharePointProperties,
+                             IngestionSourceProperties ingestionSourceProperties) {
         this.syncStatePort = syncStatePort;
-        this.properties = properties;
+        this.sharePointProperties = sharePointProperties;
+        this.ingestionSourceProperties = ingestionSourceProperties;
     }
 
     @Override
@@ -28,7 +32,10 @@ class PersistDeltaLinkTasklet implements Tasklet {
                 .getExecutionContext().getString(ChangedItemReader.FINAL_DELTA_LINK_KEY, null);
 
         if (finalDeltaLink != null) {
-            syncStatePort.saveDeltaLink(properties.driveId(), finalDeltaLink);
+            String stateKey = IngestionSourceProperties.FILESYSTEM.equals(ingestionSourceProperties.source())
+                    ? "filesystem"
+                    : sharePointProperties.driveId();
+            syncStatePort.saveDeltaLink(stateKey, finalDeltaLink);
         }
 
         return RepeatStatus.FINISHED;

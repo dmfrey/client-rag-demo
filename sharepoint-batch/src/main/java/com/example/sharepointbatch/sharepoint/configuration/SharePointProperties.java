@@ -15,7 +15,5 @@ public record SharePointProperties(
         String clientSecret,
         String siteId,
         String driveId,
-        // Default: every 15 minutes. Cron, not fixedDelay, so it's easy to read/tune in config.
-        @DefaultValue("0 */15 * * * *") String pollCron,
         @DefaultValue("50") int skipLimit
 ) {}

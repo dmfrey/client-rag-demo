@@ -2,10 +2,12 @@ package com.example.sharepointbatch.sharepoint.adapter.out.graph;
 
 import com.example.sharepointbatch.sharepoint.application.domain.model.ChangedItem;
 import com.example.sharepointbatch.sharepoint.application.port.out.ListChangedItemsPort;
+import com.example.sharepointbatch.sharepoint.configuration.IngestionSourceProperties;
 import com.example.sharepointbatch.sharepoint.configuration.SharePointProperties;
 import com.microsoft.graph.drives.item.items.item.delta.DeltaGetResponse;
 import com.microsoft.graph.models.DriveItem;
 import com.microsoft.graph.serviceclient.GraphServiceClient;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ import java.util.List;
  * tested once those credentials arrive, before trusting this against production data.
  */
 @Component
+@ConditionalOnProperty(prefix = "app.ingestion", name = "source", havingValue = IngestionSourceProperties.GRAPH, matchIfMissing = true)
 class GraphChangedItemsAdapter implements ListChangedItemsPort {
 
     private final GraphServiceClient graphServiceClient;

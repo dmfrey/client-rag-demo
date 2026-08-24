@@ -3,6 +3,7 @@ package com.example.sharepointbatch.sharepoint.batch;
 import com.example.sharepointbatch.sharepoint.application.domain.model.ChangedItem;
 import com.example.sharepointbatch.sharepoint.configuration.SharePointProperties;
 import org.springframework.batch.core.job.Job;
+import org.springframework.batch.core.job.parameters.RunIdIncrementer;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.listener.ExecutionContextPromotionListener;
@@ -17,7 +18,15 @@ class SharePointSyncJobConfig {
 
     @Bean
     Job sharePointSyncJob(JobRepository jobRepository, Step resolveDeltaLinkStep, Step syncStep, Step persistDeltaLinkStep) {
+        // RunIdIncrementer: each `cf run-task` invocation launches this app as a fresh JVM with
+        // no CLI-supplied JobParameters of its own (see TaskJobLauncherApplicationRunner, which
+        // launches this Job automatically at startup - SharepointBatchApplication's @EnableTask/
+        // spring-cloud-starter-task). Without an incrementer, every invocation would resolve to
+        // the SAME JobInstance identity and the second-ever run would fail outright with
+        // JobInstanceAlreadyCompleteException instead of running - this auto-increments a
+        // run.id parameter so every task invocation is a genuinely new JobInstance.
         return new JobBuilder("sharePointSyncJob", jobRepository)
+                .incrementer(new RunIdIncrementer())
                 .start(resolveDeltaLinkStep)
                 .next(syncStep)
                 .next(persistDeltaLinkStep)

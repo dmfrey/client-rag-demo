@@ -9,6 +9,7 @@ import liquibase.change.core.AddColumnChange;
 import liquibase.change.core.AddUniqueConstraintChange;
 import liquibase.change.core.CreateIndexChange;
 import liquibase.change.core.CreateTableChange;
+import liquibase.change.core.DropNotNullConstraintChange;
 import liquibase.change.core.DropUniqueConstraintChange;
 import liquibase.change.core.RawSQLChange;
 import liquibase.change.core.SQLFileChange;
@@ -38,6 +39,7 @@ public class LiquibaseRuntimeHints implements RuntimeHintsRegistrar {
             AddColumnChange.class,
             AddUniqueConstraintChange.class,
             DropUniqueConstraintChange.class,
+            DropNotNullConstraintChange.class,
             AbstractSQLChange.class,
             RawSQLChange.class,
             SQLFileChange.class,

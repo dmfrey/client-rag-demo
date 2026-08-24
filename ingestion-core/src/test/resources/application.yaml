@@ -3,6 +3,13 @@ spring:
     change-log: classpath:db/changelog/db.changelog-test-master.yaml
 
   ai:
+    openai:
+      embedding:
+        # Must match the model TestcontainersConfiguration actually pulls into the Ollama
+        # container - without this, Spring AI falls back to its own default model name
+        # ("text-embedding-ada-002"), which Ollama 404s on ("model not found, try pulling it
+        # first"). A real, reproducible failure caught here, not assumed.
+        model: nomic-embed-text
     vectorstore:
       pgvector:
         initialize-schema: false

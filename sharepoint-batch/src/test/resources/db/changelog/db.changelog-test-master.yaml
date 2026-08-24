@@ -14,5 +14,11 @@ databaseChangeLog:
       file: db/changelog/documents/db.changelog-documents-003.yaml
       relativeToChangelogFile: false
   - include:
+      file: db/changelog/documents/db.changelog-documents-004.yaml
+      relativeToChangelogFile: false
+  - include:
       file: db/changelog/sharepoint/db.changelog-sharepoint-001.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/sharepoint/db.changelog-sharepoint-002.yaml
       relativeToChangelogFile: false
