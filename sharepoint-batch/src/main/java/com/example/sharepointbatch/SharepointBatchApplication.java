@@ -2,6 +2,7 @@ package com.example.sharepointbatch;
 
 import com.example.sharepointbatch.configuration.LiquibaseRuntimeHints;
 import com.example.sharepointbatch.configuration.OpenAiRuntimeHints;
+import com.example.sharepointbatch.configuration.SpringBatchRuntimeHints;
 import com.example.clientragdemo.ingestion.configuration.PdfBoxRuntimeHints;
 import com.example.clientragdemo.ingestion.configuration.PoiRuntimeHints;
 import com.example.clientragdemo.ingestion.configuration.XmlBeansRuntimeHints;
@@ -31,7 +32,7 @@ import org.springframework.context.annotation.ImportRuntimeHints;
 // bean creation.
 @SpringBootApplication
 @EnableTask
-@ImportRuntimeHints({ LiquibaseRuntimeHints.class, OpenAiRuntimeHints.class, PdfBoxRuntimeHints.class, PoiRuntimeHints.class, XmlBeansRuntimeHints.class })
+@ImportRuntimeHints({ LiquibaseRuntimeHints.class, OpenAiRuntimeHints.class, SpringBatchRuntimeHints.class, PdfBoxRuntimeHints.class, PoiRuntimeHints.class, XmlBeansRuntimeHints.class })
 public class SharepointBatchApplication {
 
     @Bean
