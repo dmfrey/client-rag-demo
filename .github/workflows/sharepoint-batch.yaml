@@ -58,6 +58,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish image
+        # APP_INGESTION_SOURCE=filesystem here, not just at deploy time: bootBuildImage runs
+        # Spring AOT processing (processAot/compileAotJava) as part of this same Gradle
+        # invocation, and a real deploy confirmed that @ConditionalOnProperty-gated beans in
+        # ordinary application @Configuration classes (SharePointConfiguration's
+        # GraphServiceClient bean, GraphChangedItemsAdapter/GraphItemDownloadAdapter - see
+        # IngestionSourceProperties) get resolved once during THIS AOT processing and baked
+        # permanently into the native image, not re-evaluated from the environment at container
+        # startup the way a plain JVM app would. Deploying with `cf set-env
+        # APP_FILESYSTEM_SOURCE_PATH ...` alone still left the Graph beans wired in and crashing
+        # on missing Graph credentials, because the image had been built with this property
+        # unset (defaulting to "graph" - see IngestionSourceProperties' matchIfMissing=true).
+        # This means: switching this app to the "graph" source later requires rebuilding the
+        # native image with this env var set to "graph" (or removed), not just a redeploy - a
+        # real, now-documented constraint of shipping conditional multi-mode config as a single
+        # native image, unlike backend's plain-JVM-at-buildpack-time flexibility.
+        env:
+          APP_INGESTION_SOURCE: filesystem
         run: |
           ./gradlew :sharepoint-batch:bootBuildImage \
             --imageName=ghcr.io/${{ github.repository }}-sharepoint-batch:latest \
