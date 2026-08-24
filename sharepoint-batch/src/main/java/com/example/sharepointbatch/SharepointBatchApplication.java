@@ -1,11 +1,17 @@
 package com.example.sharepointbatch;
 
+import com.example.sharepointbatch.configuration.LiquibaseRuntimeHints;
+import com.example.sharepointbatch.configuration.OpenAiRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.PdfBoxRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.PoiRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.XmlBeansRuntimeHints;
 import org.springframework.batch.core.configuration.JobRegistry;
 import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.task.configuration.EnableTask;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ImportRuntimeHints;
 
 // Deliberately no @EnableBatchProcessing (tried once, reverted - see git history): that
 // annotation's own @ConditionalOnMissingBean(DefaultBatchConfiguration.class) check makes Boot's
@@ -25,6 +31,7 @@ import org.springframework.context.annotation.Bean;
 // bean creation.
 @SpringBootApplication
 @EnableTask
+@ImportRuntimeHints({ LiquibaseRuntimeHints.class, OpenAiRuntimeHints.class, PdfBoxRuntimeHints.class, PoiRuntimeHints.class, XmlBeansRuntimeHints.class })
 public class SharepointBatchApplication {
 
     @Bean

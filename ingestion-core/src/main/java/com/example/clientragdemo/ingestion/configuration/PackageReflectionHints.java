@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -12,22 +12,24 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 
 // Shared by the native-image hints registrars that need to grant full reflection access to every
-// class under some third-party package rather than one class at a time (see OpenAiRuntimeHints) -
-// the common case being generated model/schema classes too numerous to name individually, each
-// only actually needed once some corresponding real content is exercised. ingestion-core's
-// Tika/POI/XMLBeans hints moved into their own copy of this helper there - this one backs only
-// this app's own OpenAiRuntimeHints, which is backend-specific (chat+embeddings), not shared.
+// class under some third-party package rather than one class at a time (see PoiRuntimeHints,
+// XmlBeansRuntimeHints here, and each consuming app's own OpenAiRuntimeHints) - the common case
+// being generated model/schema classes too numerous to name individually, each only actually
+// needed once some corresponding real content is exercised.
 final class PackageReflectionHints {
 
     private PackageReflectionHints() {
     }
 
-    static void registerTopLevelOnly(RuntimeHints hints, ClassLoader classLoader, String packageName) {
-        registerPackage(hints, classLoader, packageName, false);
-    }
-
     static void registerPackage(RuntimeHints hints, ClassLoader classLoader, String packageName) {
         registerPackage(hints, classLoader, packageName, true);
+    }
+
+    // Registers only the classes directly in packageName, not its subpackages - for a third-party
+    // package whose top level holds shared types but whose subpackages are far larger than what
+    // a consuming app actually needs.
+    static void registerTopLevelOnly(RuntimeHints hints, ClassLoader classLoader, String packageName) {
+        registerPackage(hints, classLoader, packageName, false);
     }
 
     private static void registerPackage(RuntimeHints hints, ClassLoader classLoader, String packageName, boolean recursive) {

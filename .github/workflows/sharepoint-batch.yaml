@@ -34,12 +34,14 @@ jobs:
         run: ./gradlew :sharepoint-batch:test :ingestion-core:test
 
   publish-image:
-    name: Build and publish image
+    name: Build and publish native image
     needs: test
     runs-on: ubuntu-latest
-    # A plain JVM Cloud Native Buildpacks build (no BP_NATIVE_IMAGE, unlike backend's
-    # native-image.yaml) - no native-image analysis phase, so none of that workflow's
-    # memory/timeout tuning applies here. Default timeout is plenty.
+    # Native image now (see sharepoint-batch/build.gradle's bootBuildImage comment for why) -
+    # mirrors native-image.yaml's timeout budget for backend's own native-image build, since this
+    # app pulls in the same Tika/POI/XMLBeans reflection surface via ingestion-core and needs the
+    # same points-to-analysis memory/time tradeoffs (-H:NumberOfThreads=1, see build.gradle).
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 

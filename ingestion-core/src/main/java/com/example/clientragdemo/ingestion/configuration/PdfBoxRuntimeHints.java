@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -12,7 +12,9 @@ import org.springframework.aot.hint.RuntimeHintsRegistrar;
 // production PDF upload, not any local/CI testing (Tika's own reachability metadata, if any,
 // doesn't cover PDFBox's resources - confirmed empirically, not by inspecting PDFBox's jar, which
 // has no META-INF/native-image directory at all). Registers the whole resources tree rather than
-// one file at a time as different PDFs exercise different fonts/color spaces/CMaps.
+// one file at a time as different PDFs exercise different fonts/color spaces/CMaps. Lives in
+// ingestion-core (not a consuming app) since this is about what ingestion-core's own
+// DocumentIndexingAdapter/Tika parsing does, shared by every app that pulls in this library.
 public class PdfBoxRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override

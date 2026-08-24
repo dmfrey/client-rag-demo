@@ -3,10 +3,13 @@
 // ingestion-core, then exits. Deployed as a Cloud Foundry Task (`cf run-task`, triggered
 // periodically by an external scheduler - see manifest.yml), not a long-running app: no web
 // server/actuator (see the dependency list below - deliberately no webmvc/actuator), no internal
-// @Scheduled loop. Deliberately a plain JVM image, not GraalVM native - see this module's
-// configuration/ package for why (backend's CLAUDE.md documents the native-image reflection
-// fights this app would otherwise inherit from Tika/POI/XMLBeans via ingestion-core, on top of
-// new ones for the Graph SDK, for no benefit to a short-lived task's startup latency).
+// @Scheduled loop. Built as a GraalVM native image (see the bootBuildImage task below) - this was
+// originally a plain JVM image specifically to avoid inheriting backend's native-image reflection
+// fights for no benefit to a short-lived task's startup latency, but CF's java_buildpack staging
+// path this app used for the plain-JVM deploy started reproducibly OOM-killing itself during the
+// JRE-expansion step (Exit status 137, reproduced on three separate cells, no platform-side
+// resolution timeline) - switching to a native image sidesteps that buildpack path entirely by
+// deploying via `docker: image:` instead (same as backend).
 plugins {
     id 'java'
     id 'org.springframework.boot' version '4.1.1'
@@ -106,7 +109,20 @@ tasks.named('test') {
 
 tasks.named('bootBuildImage') {
     // Separate image name from backend's (ghcr.io/dmfrey/client-rag-demo) - these are two
-    // independently deployed apps sharing one repo, not one app. No BP_NATIVE_IMAGE here,
-    // deliberately - see the comment at the top of this file: this stays a plain JVM image.
+    // independently deployed apps sharing one repo, not one app.
     imageName = "ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:${project.version}"
+    // Switched to a native image (was a plain JVM image - see git history for the original
+    // rationale against it) after CF's java_buildpack staging repeatedly OOM'd on this app's
+    // deploy path (Exit status 137 during the JRE-expansion step, reproduced on three different
+    // cells) with no clear resolution timeline from the platform team. A native image sidesteps
+    // that staging pipeline entirely - it deploys via `docker: image:` (see manifest.yml), the
+    // same path backend already uses successfully. Mirrors backend/build.gradle's own
+    // BP_NATIVE_IMAGE args - this app pulls in the same Tika/PDFBox/POI/XMLBeans reflection
+    // surface via ingestion-core, so it needs the same charset/resource-bundle/thread-count
+    // mitigations backend already found necessary (see that file's comment for the full story
+    // behind each one).
+    environment = [
+            'BP_NATIVE_IMAGE': 'true',
+            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1',
+    ]
 }

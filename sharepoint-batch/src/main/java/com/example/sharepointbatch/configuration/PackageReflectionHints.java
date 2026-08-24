@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.sharepointbatch.configuration;
 
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -14,9 +14,9 @@ import java.io.UncheckedIOException;
 // Shared by the native-image hints registrars that need to grant full reflection access to every
 // class under some third-party package rather than one class at a time (see OpenAiRuntimeHints) -
 // the common case being generated model/schema classes too numerous to name individually, each
-// only actually needed once some corresponding real content is exercised. ingestion-core's
-// Tika/POI/XMLBeans hints moved into their own copy of this helper there - this one backs only
-// this app's own OpenAiRuntimeHints, which is backend-specific (chat+embeddings), not shared.
+// only actually needed once some corresponding real content is exercised. A copy of
+// ingestion-core's own helper of the same name, not a shared dependency on it - this one backs
+// this app's own OpenAiRuntimeHints, unrelated to ingestion-core's document-parsing concerns.
 final class PackageReflectionHints {
 
     private PackageReflectionHints() {

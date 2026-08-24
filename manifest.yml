@@ -110,39 +110,24 @@ applications:
     # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
     # its earlier @Scheduled-based design).
     #
-    # Deployed via CF's own Java buildpack directly from the bootJar, unlike backend's Docker/
-    # GHCR path - sharepoint-batch is a plain JVM app (no native-image build to run inside
-    # Paketo's builder container), so there's no reason to route it through a container registry
-    # at all. .github/workflows/sharepoint-batch.yaml also publishes a container image to GHCR
-    # (kept for consistency with backend's pattern/for non-CF deployment targets), but this
-    # manifest entry doesn't consume it.
-    #   ./gradlew :sharepoint-batch:bootJar
-    path: sharepoint-batch/build/libs/sharepoint-batch-0.0.1-SNAPSHOT.jar
-    buildpacks:
-      - java_buildpack_offline
+    # Deployed via Docker/GHCR now, same as backend - this app was originally a plain JVM app
+    # pushed directly from its bootJar via java_buildpack specifically to avoid the native-image
+    # reflection fights backend already documents, but that buildpack's staging path started
+    # reproducibly OOM-killing itself (Exit status 137 during the JRE-expansion step, on three
+    # separate cells, no clear platform-side resolution timeline) - switched to a GraalVM native
+    # image (see sharepoint-batch/build.gradle's bootBuildImage task) to sidestep that staging
+    # pipeline entirely, the same way backend already avoids it.
+    docker:
+      image: ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:latest
+      # Same GHCR-visibility note as backend's own entry above - needs
+      # `cf push --docker-username <github-username>` (prompts for a GitHub PAT with
+      # read:packages) unless the package has been made public.
     memory: 1G
     # Never started as a long-running process - see the note above. `cf run-task` uses the
     # staged droplet directly regardless of this app's own "started"/"stopped" state.
     instances: 0
     no-route: true
     env:
-      # java_buildpack (unlike backend's Docker path, which never runs it) unconditionally adds
-      # java-cfenv-boot (internal buildpack component name: java_cf_env) to the classpath, whose
-      # CloudProfileApplicationListener activates a "cloud" Spring profile and rebinds the
-      # datasource from VCAP_SERVICES whenever it detects bound services - found breaking
-      # ingestion-core's @EnableJdbcRepositories wiring outright ("Parameter 0 of constructor in
-      # DocumentPersistenceAdapter required a bean of type JdbcAggregateOperations that could not
-      # be found") on the first real deploy via this buildpack. Confirmed via `cf run-task` debug
-      # commands (`cf ssh` is blocked in some environments/networks, `cf run-task` isn't - it
-      # doesn't need an interactively-reachable running instance) that the component's actual
-      # on-disk name is `java_cf_env` (not the older, unrelated `spring_auto_reconfiguration`
-      # framework, which has no effect on this buildpack version despite superficially similar
-      # naming/purpose - tried first and confirmed to do nothing here). This app already
-      # configures its datasource explicitly via the SPRING_DATASOURCE_* env vars below, so the
-      # buildpack's own auto-reconfiguration is redundant at best - this is its documented,
-      # component-specific opt-out (JBP_CONFIG_<COMPONENT_NAME>, matching the buildpack's own
-      # internal directory-name convention under .java-buildpack/).
-      JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
       # Same shared Postgres/genai-service bindings as backend - see its own env: comments above
       # for why real values come from vars.yml rather than VCAP_SERVICES.
       SPRING_DATASOURCE_URL: ((db-jdbc-url))

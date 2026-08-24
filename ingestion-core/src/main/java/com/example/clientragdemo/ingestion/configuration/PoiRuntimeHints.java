@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -6,7 +6,9 @@ import org.springframework.aot.hint.RuntimeHintsRegistrar;
 // Apache POI's OOXML support (pulled in transitively via Tika's Word/Excel/PowerPoint parsers -
 // see build.gradle's comment on spring-ai-tika-document-reader) needs two separate kinds of
 // native-image registration, neither shipped by POI itself (no META-INF/native-image directory in
-// its jars, confirmed by inspecting them directly):
+// its jars, confirmed by inspecting them directly). Lives in ingestion-core (not a consuming app)
+// since this is about what ingestion-core's own DocumentIndexingAdapter/Tika parsing does, shared
+// by every app that pulls in this library:
 //
 // 1. Resources: its compiled XMLBeans schema definitions are ~9,000 individual .xsb files under
 //    org/apache/poi/schemas, read lazily by name as XMLBeans walks a document's actual XML
@@ -22,12 +24,13 @@ import org.springframework.aot.hint.RuntimeHintsRegistrar;
 //    enough into a real .docx to hit it.
 //
 // Scoped to wordprocessingml alone (903 classes) rather than the whole org.openxmlformats.schemas
-// tree (~4,700+ across every OOXML format, since this app only accepts PDF/DOCX/TXT) - registering
-// office+drawingml too (on the theory that a .docx could embed drawings) actually broke the
-// native-image build outright: the analysis phase's own deadlock watchdog aborted a real CI run at
-// ~10GB heap. Narrowed back to exactly what's proven necessary (DocumentDocument/DocumentDocumentImpl
-// are in wordprocessingml) rather than registering defensively; add more scoped packages here only
-// if a real document exercising them actually fails, the same way this whole file's scope was found.
+// tree (~4,700+ across every OOXML format, since ingestion-core only accepts PDF/DOCX/TXT) -
+// registering office+drawingml too (on the theory that a .docx could embed drawings) actually
+// broke the native-image build outright: the analysis phase's own deadlock watchdog aborted a
+// real CI run at ~10GB heap. Narrowed back to exactly what's proven necessary
+// (DocumentDocument/DocumentDocumentImpl are in wordprocessingml) rather than registering
+// defensively; add more scoped packages here only if a real document exercising them actually
+// fails, the same way this whole file's scope was found.
 public class PoiRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override
@@ -48,7 +51,7 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
         // as DocumentDocument above, but for XWPFTheme's ThemeDocument
         // (org.openxmlformats.schemas.drawingml.x2006.main - 713 classes). Scoped to just the
         // "main" drawingml subpackage, not the whole drawingml tree (chart/diagram/spreadsheetDrawing
-        // are Excel/PowerPoint-only and this app only accepts PDF/DOCX/TXT) - registering
+        // are Excel/PowerPoint-only and ingestion-core only accepts PDF/DOCX/TXT) - registering
         // wordprocessingml+officeDocument+drawingml (all subpackages) together previously caused
         // the native-image analysis phase's deadlock watchdog to abort a real CI run at ~10GB heap
         // (see git history), so new packages get added one proven-necessary subpackage at a time
@@ -60,10 +63,10 @@ public class PoiRuntimeHints implements RuntimeHintsRegistrar {
         // customProperties' PropertiesDocument (docProps/custom.xml - only present if the author
         // set custom properties, but the static initializer touches the type either way) before any
         // document-specific code runs. Being a <clinit> failure, the resulting
-        // ExceptionInInitializerError is an Error, not an Exception - this app's ingestion error
-        // handling only catches RuntimeException, so it went uncaught, leaving the document
-        // permanently stuck at PROCESSING instead of transitioning to FAILED (same uncaught-Error
-        // shape as the CP1252/LocaleUtil charset gap - see build.gradle's
+        // ExceptionInInitializerError is an Error, not an Exception - ingestion's error handling
+        // only catches RuntimeException, so it went uncaught, leaving the document permanently
+        // stuck at PROCESSING instead of transitioning to FAILED (same uncaught-Error shape as the
+        // CP1252/LocaleUtil charset gap - see each consuming app's build.gradle
         // BP_NATIVE_IMAGE_BUILD_ARGUMENTS comment). Both subpackages are tiny (10 and 6 classes) so
         // registered together rather than waiting for a second failure to prove customProperties too.
         PackageReflectionHints.registerPackage(hints, classLoader, "org.openxmlformats.schemas.officeDocument.x2006.extendedProperties");
