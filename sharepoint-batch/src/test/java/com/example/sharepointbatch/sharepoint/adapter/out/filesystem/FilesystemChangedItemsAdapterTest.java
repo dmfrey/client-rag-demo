@@ -48,4 +48,24 @@ class FilesystemChangedItemsAdapterTest {
         String secondVersion = adapter.list("ignored").items().get(0).eTag();
         assertThat(secondVersion).isNotEqualTo(firstVersion);
     }
+
+    @Test
+    void skipsADirectoryThatCannotBeListedRatherThanAbortingTheWholeScan() throws IOException {
+        // Reproduces a real CF block-storage volume mount: its root always contains a lost+found
+        // directory owned by root, permission-denied for this process to list.
+        Files.writeString(root.resolve("visible.txt"), "visible content");
+        Path restricted = Files.createDirectory(root.resolve("lost+found"));
+        Files.writeString(restricted.resolve("hidden.txt"), "hidden content");
+        assertThat(restricted.toFile().setReadable(false, false)).isTrue();
+
+        try {
+            FilesystemChangedItemsAdapter adapter = new FilesystemChangedItemsAdapter(new FilesystemSourceProperties(root.toString()));
+            DeltaPage page = adapter.list("ignored");
+
+            assertThat(page.items()).extracting(ChangedItem::driveItemId).containsExactly("visible.txt");
+        }
+        finally {
+            restricted.toFile().setReadable(true, false);
+        }
+    }
 }
