@@ -12,6 +12,7 @@
 // deploying via `docker: image:` instead (same as backend).
 plugins {
     id 'java'
+    id 'maven-publish'
     id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
     id 'org.graalvm.buildtools.native' version '1.1.10'
@@ -115,6 +116,28 @@ tasks.named('test') {
     useJUnitPlatform()
     // Same rationale as backend/build.gradle: rootless Podman can't run Ryuk.
     environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+}
+
+// Same rationale as backend/build.gradle's own publishing {} block - publishes the executable jar
+// to GitHub Packages alongside the native-image container, for anyone running this outside the
+// CF/native-image path.
+publishing {
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/dmfrey/client-rag-demo')
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+    publications {
+        bootJar(MavenPublication) {
+            artifact tasks.named('bootJar')
+            artifactId = 'client-rag-demo-sharepoint-batch'
+        }
+    }
 }
 
 tasks.named('bootBuildImage') {

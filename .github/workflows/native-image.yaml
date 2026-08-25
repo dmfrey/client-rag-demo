@@ -78,3 +78,26 @@ jobs:
           ./gradlew :backend:bootBuildImage \
             --imageName=ghcr.io/${{ github.repository }}:latest \
             --publishImage
+
+  publish-jar:
+    name: Publish executable jar to GitHub Packages
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Publish jar
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --no-configuration-cache: maven-publish's GenerateMavenPom task can't serialize into the
+        # configuration cache this project otherwise uses by default (Configuration/Project/
+        # DependencyHandler aren't cache-safe types, per Gradle's own requirements doc) - confirmed
+        # locally, the task itself succeeds and produces a correct POM either way, only the cache
+        # write fails and turns that into a false BUILD FAILED.
+        run: ./gradlew :backend:publish --no-configuration-cache

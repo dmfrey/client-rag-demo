@@ -1,5 +1,6 @@
 plugins {
 	id 'java'
+	id 'maven-publish'
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'jacoco'
@@ -115,6 +116,30 @@ jacocoTestReport {
 	reports {
 		xml.required = true
 		html.required = true
+	}
+}
+
+// Publishes the executable ("fat") jar bootJar produces to GitHub Packages' Maven registry,
+// alongside (not instead of) the GraalVM native-image container bootBuildImage publishes to GHCR
+// below - a plain-JVM artifact for anyone running this outside the native-image/CF path. Reuses
+// the same GITHUB_TOKEN (packages:write, already granted in native-image.yaml) rather than a new
+// secret - GitHub Packages Maven auth is username=actor/password=token, the standard pattern.
+publishing {
+	repositories {
+		maven {
+			name = 'GitHubPackages'
+			url = uri('https://maven.pkg.github.com/dmfrey/client-rag-demo')
+			credentials {
+				username = System.getenv('GITHUB_ACTOR')
+				password = System.getenv('GITHUB_TOKEN')
+			}
+		}
+	}
+	publications {
+		bootJar(MavenPublication) {
+			artifact tasks.named('bootJar')
+			artifactId = 'client-rag-demo-backend'
+		}
 	}
 }
 

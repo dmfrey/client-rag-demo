@@ -79,3 +79,28 @@ jobs:
           ./gradlew :sharepoint-batch:bootBuildImage \
             --imageName=ghcr.io/${{ github.repository }}-sharepoint-batch:latest \
             --publishImage
+
+  publish-jar:
+    name: Publish executable jar to GitHub Packages
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Publish jar
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # No APP_INGESTION_SOURCE override here (unlike the native-image job above): AOT-generated
+        # code is only actually used at runtime under -Dspring.aot.enabled=true, which a plain
+        # `java -jar` run doesn't set by default - the @ConditionalOnProperty-baked-at-build-time
+        # constraint documented on the native-image job is specific to native images, where using
+        # the AOT initializer isn't optional. This jar still resolves app.ingestion.source
+        # dynamically from the environment at actual startup.
+        # --no-configuration-cache: see native-image.yaml's publish-jar job for why.
+        run: ./gradlew :sharepoint-batch:publish --no-configuration-cache

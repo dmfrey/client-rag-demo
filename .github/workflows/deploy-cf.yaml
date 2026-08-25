@@ -1,0 +1,99 @@
+name: Deploy to Cloud Foundry
+
+# Triggers right away on every push to main, same as the two build workflows - but the
+# `environment: production` gate below (a required-reviewer protection rule, configured on this
+# repo's "production" GitHub Environment) pauses the job before it does anything, waiting for a
+# human to click Approve in the Actions UI. That approval click is the actual safety gate: by the
+# time you approve, you've had a chance to confirm native-image.yaml and sharepoint-batch.yaml
+# both finished green, and the job doesn't proceed without an explicit human decision either way.
+# workflow_dispatch is also here for an ad-hoc redeploy of the current main without a new push
+# (e.g. after a config-only change like a manifest.yml env var, which doesn't trigger either build
+# workflow's path filters).
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+# Only one deploy at a time - a second push landing while an approval is still pending should wait
+# for the first to finish (or be cancelled by a human), not race it.
+concurrency:
+  group: deploy-cf
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: cf push (backend, frontend, sharepoint-batch)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          # Must match manifest.yml's client-rag-demo-backend route exactly - baked in at build
+          # time since this is a static SPA (see CLAUDE.md's Tech Stack/Deployment sections).
+          VITE_API_BASE_URL: https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install cf CLI
+        run: |
+          curl -L "https://packages.cloudfoundry.org/stable?release=linux64-binary&version=v8&source=github" -o cf8.tgz
+          tar -xzf cf8.tgz cf8
+          sudo mv cf8 /usr/local/bin/cf
+          cf version
+
+      # PENDING: this repo doesn't yet have CF_CLIENT_ID/CF_CLIENT_SECRET secrets - `cf` can't do
+      # the interactive SSO login a human uses from a terminal, so CI needs a non-interactive
+      # credential instead. UAA client_credentials (a client_id/secret registered for
+      # machine-to-machine auth, not tied to a real user) is the standard approach and what this
+      # step assumes - confirm with your platform team whether such a client already exists for
+      # this foundation/org/space, or needs to be registered. If only a service-account
+      # username/password is available instead, swap this step's `cf auth` line for
+      # `cf auth "$CF_USERNAME" "$CF_PASSWORD"` and the corresponding secret names below.
+      - name: Log in to Cloud Foundry
+        env:
+          CF_API: https://api.sys.tas-ndc.kuhn-labs.com
+          CF_ORG: u-daniel-frey-broadcom-com
+          CF_SPACE: dev
+          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
+          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
+        run: |
+          cf api "$CF_API"
+          cf auth "$CF_CLIENT_ID" "$CF_CLIENT_SECRET" --client-credentials
+          cf target -o "$CF_ORG" -s "$CF_SPACE"
+
+      # Mirrors vars.yml.example's shape (see repo root) - written at runtime from GitHub Secrets
+      # rather than committing a real vars.yml, same reason vars.yml itself is gitignored.
+      - name: Write vars file
+        env:
+          DB_JDBC_URL: ${{ secrets.CF_DB_JDBC_URL }}
+          DB_USERNAME: ${{ secrets.CF_DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.CF_DB_PASSWORD }}
+          AI_API_KEY: ${{ secrets.CF_AI_API_KEY }}
+        run: |
+          cat > vars.yml <<VARS_EOF
+          db-jdbc-url: "$DB_JDBC_URL"
+          db-username: "$DB_USERNAME"
+          db-password: "$DB_PASSWORD"
+          ai-api-key: "$AI_API_KEY"
+          VARS_EOF
+
+      # Pushes all three apps declared in manifest.yml (backend, frontend, sharepoint-batch).
+      # sharepoint-batch has instances: 0/no-route: true (see manifest.yml's own comment) - this
+      # only stages its droplet, it never starts running, matching its Task-only production shape.
+      - name: cf push
+        run: cf push --vars-file vars.yml
+
+      - name: Clean up vars file
+        if: always()
+        run: rm -f vars.yml
