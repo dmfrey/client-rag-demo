@@ -32,6 +32,12 @@ export function DocumentsPage() {
     queryFn: documentsApi.list,
     // Keep polling only while something is still being ingested.
     refetchInterval: (query) => (query.state.data?.some((doc) => doc.status === "PROCESSING") ? 2000 : false),
+    // Ingestion can run 15-20+ minutes for a large document - without this, TanStack Query's
+    // default (pause polling whenever the tab isn't the focused/visible one, per the Page
+    // Visibility API) means switching away from the tab during that window silently freezes the
+    // status column at PROCESSING until a manual reload, even though the backend finished long
+    // ago.
+    refetchIntervalInBackground: true,
   });
 
   const uploadMutation = useMutation({
