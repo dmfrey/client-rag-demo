@@ -1,0 +1,79 @@
+name: Package Frontend for Offline Deployment
+
+# Publishes a pre-built frontend/dist bundle as a GitHub Release asset, for a client deploying
+# into a secured enclave with no npm registry access at deploy time. VITE_API_BASE_URL is baked
+# in at build time (it's a static SPA - see CLAUDE.md's Tech Stack/Deployment sections), so a
+# single pre-built bundle can't hardcode a real backend route without only working for whichever
+# route it happened to be built against. Instead this builds with a fixed placeholder string
+# (__RUNTIME_API_BASE_URL__) in place of a real URL - src/api/client.ts just treats
+# VITE_API_BASE_URL as an opaque string prefix with no build-time validation, so the placeholder
+# survives into the built JS bundle as a literal string, ready for the deploying party to swap
+# via a single `sed` command (see the release notes this workflow writes) - no Node/npm/rebuild
+# needed on their end, and it works for whatever backend route *they* have, not just this
+# foundation's.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-package.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # gh release create/upload needs this, not packages: write
+
+jobs:
+  package:
+    name: Build and publish offline frontend bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Build frontend with a placeholder backend URL
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: __RUNTIME_API_BASE_URL__
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package dist/
+        working-directory: frontend
+        run: tar -czf ../frontend-dist.tar.gz -C dist .
+
+      - name: Publish/update the frontend-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'NOTES_EOF'
+          Pre-built `frontend/dist` bundle for deploying into an environment with no npm/Node.js
+          access (e.g. an air-gapped secured enclave) - rebuilt automatically from `main` on every
+          frontend change.
+
+          The bundle is built with a placeholder in place of a real backend URL, since that value
+          is normally baked in at build time (see `CLAUDE.md`'s Deployment section). Before
+          deploying, swap it for your actual backend route:
+
+          ```bash
+          mkdir -p dist && tar -xzf frontend-dist.tar.gz -C dist
+          find dist -name '*.js' -exec sed -i 's|__RUNTIME_API_BASE_URL__|https://<your-backend-route>|g' {} +
+          cf push <frontend-app-name> -p dist -b staticfile_buildpack -m 64M
+          ```
+
+          Skip the `sed` step entirely if frontend and backend share one origin (e.g. a reverse
+          proxy routes `/api` to the backend on the same host) - the placeholder is simply never
+          referenced in that case, since the app defaults to relative paths.
+          NOTES_EOF
+
+          if gh release view frontend-latest >/dev/null 2>&1; then
+            gh release upload frontend-latest frontend-dist.tar.gz --clobber
+            gh release edit frontend-latest --notes-file release-notes.md
+          else
+            gh release create frontend-latest frontend-dist.tar.gz \
+              --title "Frontend (latest, offline-deployable)" \
+              --notes-file release-notes.md
+          fi
