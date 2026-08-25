@@ -52,24 +52,20 @@ jobs:
           sudo mv cf8 /usr/local/bin/cf
           cf version
 
-      # PENDING: this repo doesn't yet have CF_CLIENT_ID/CF_CLIENT_SECRET secrets - `cf` can't do
-      # the interactive SSO login a human uses from a terminal, so CI needs a non-interactive
-      # credential instead. UAA client_credentials (a client_id/secret registered for
-      # machine-to-machine auth, not tied to a real user) is the standard approach and what this
-      # step assumes - confirm with your platform team whether such a client already exists for
-      # this foundation/org/space, or needs to be registered. If only a service-account
-      # username/password is available instead, swap this step's `cf auth` line for
-      # `cf auth "$CF_USERNAME" "$CF_PASSWORD"` and the corresponding secret names below.
+      # Service-account username/password (not a personal SSO login) - `cf` can't do the
+      # interactive SSO flow a human uses from a terminal, so CI needs a non-interactive
+      # credential. Needs CF_USERNAME/CF_PASSWORD added as repo secrets before this step will
+      # succeed.
       - name: Log in to Cloud Foundry
         env:
           CF_API: https://api.sys.tas-ndc.kuhn-labs.com
           CF_ORG: u-daniel-frey-broadcom-com
           CF_SPACE: dev
-          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
-          CF_CLIENT_SECRET: ${{ secrets.CF_CLIENT_SECRET }}
+          CF_USERNAME: ${{ secrets.CF_USERNAME }}
+          CF_PASSWORD: ${{ secrets.CF_PASSWORD }}
         run: |
           cf api "$CF_API"
-          cf auth "$CF_CLIENT_ID" "$CF_CLIENT_SECRET" --client-credentials
+          cf auth "$CF_USERNAME" "$CF_PASSWORD"
           cf target -o "$CF_ORG" -s "$CF_SPACE"
 
       # Mirrors vars.yml.example's shape (see repo root) - written at runtime from GitHub Secrets
