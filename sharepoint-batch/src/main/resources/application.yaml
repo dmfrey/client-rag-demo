@@ -1,0 +1,77 @@
+logging:
+  level:
+    org.springframework.batch: info
+    org.springframework.cloud.task: info
+    com.example.sharepointbatch: debug
+
+spring:
+  application:
+    name: sharepoint-batch
+
+  main:
+    # No web starter is on the classpath (see build.gradle) so Boot would infer this anyway -
+    # explicit for clarity: this is a run-once CLI-style process (a Spring Cloud Task, see
+    # SharepointBatchApplication), not a server.
+    web-application-type: none
+
+  batch:
+    jdbc:
+      # Liquibase owns this schema (db/changelog/sharepoint/) - don't let Spring Batch's own
+      # auto-init also try to create it. See db.changelog-sharepoint-001.yaml.
+      initialize-schema: never
+    # job.enabled left at its default (true) here deliberately - TaskJobLauncherApplicationRunner
+    # (from spring-cloud-task-batch) is what actually launches sharePointSyncJob at startup, and
+    # needs this NOT disabled. Test config (src/test/resources/application.yaml) overrides this
+    # back to false, since tests want to control job launch timing themselves via
+    # JobLauncherTestUtils rather than have it auto-fire at context startup.
+
+  cloud:
+    task:
+      # Liquibase owns this schema too - see db.changelog-sharepoint-002.yaml, same rationale as
+      # spring.batch.jdbc.initialize-schema above.
+      initialize-enabled: false
+      batch:
+        # A failed sharePointSyncJob should fail the whole cf run-task invocation (non-zero exit
+        # code) rather than reporting task success - makes job failures visible to whatever
+        # external scheduler is triggering these runs (see manifest.yml).
+        fail-on-job-failure: true
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+  ai:
+    openai:
+      # No default - every environment needs an explicit SPRING_AI_OPENAI_BASE_URL/_API_KEY, same
+      # as backend (see backend/application.yaml and CLAUDE.md).
+      chat:
+        model: qwen2.5:7b-instruct
+      embedding:
+        model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        # ingestion-core's changelog (run by backend) owns this table - see the master changelog
+        # comment above for why this app must not be pointed at an unmigrated database.
+        initialize-schema: false
+
+app:
+  documents:
+    ingestion:
+      # Same property/prefix as backend (see ingestion-core's IngestionProperties) - keep these
+      # two apps' chunk sizes in sync manually per deployment, since they write into the same
+      # vector_store table against the same embedding model's context window limit.
+      chunk-size: 800
+  ingestion:
+    # "graph" (default, real SharePoint) or "filesystem" (a mounted directory - see
+    # FilesystemSourceProperties/IngestionSourceProperties). Selects which adapter pair is wired
+    # in; only one is ever active.
+    source: graph
+  sharepoint:
+    # tenant-id/client-id/client-secret/site-id/drive-id have no defaults - every deployment
+    # needs its own Azure AD app registration and target site/drive (see SharePointProperties).
+    # No poll-cron here anymore - scheduling moved outside the app entirely (an external
+    # scheduler triggers `cf run-task`, see manifest.yml) once this became a Spring Cloud Task.
+    skip-limit: 50
+  filesystem-source:
+    # Only meaningful when app.ingestion.source=filesystem - the mount path of a bound volume
+    # service (e.g. Cloud Foundry block-storage, see manifest.yml).
+    path: /mnt/rag-docs

@@ -5,11 +5,22 @@ databaseChangeLog:
   - include:
       file: db/changelog/users/db.changelog-users-002.yaml
       relativeToChangelogFile: false
+  # documents-001/002/003 now live in ingestion-core (see CLAUDE.md's Database Migrations
+  # section) - resolved via classpath, same as spring-ai-model-chat-memory-repository-jdbc's
+  # vendor-shipped schema-postgresql.sql below. Backend remains the sole Liquibase runner
+  # against this shared schema - sharepoint-batch never runs these changesets itself, only its
+  # own (see sharepoint-batch's db.changelog-master.yaml).
   - include:
       file: db/changelog/documents/db.changelog-documents-001.yaml
       relativeToChangelogFile: false
   - include:
       file: db/changelog/documents/db.changelog-documents-002.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-003.yaml
+      relativeToChangelogFile: false
+  - include:
+      file: db/changelog/documents/db.changelog-documents-004.yaml
       relativeToChangelogFile: false
   - include:
       file: db/changelog/chat/db.changelog-chat-001.yaml

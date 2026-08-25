@@ -1,0 +1,100 @@
+// Plain Java library, deliberately NOT a Spring Boot application - no org.springframework.boot
+// plugin, no Boot starters as main dependencies. Holds the hexagonal document-ingestion slice
+// (domain model, ports, JDBC persistence adapter, Tika/chunk/pgvector indexing adapter) shared by
+// backend (web upload) and sharepoint-batch (SharePoint polling) - see CLAUDE.md's Backend
+// Architecture section. Each consuming Spring Boot app wires this module's beans in via its own
+// @ComponentScan/@Import of IngestionCoreConfiguration, exactly like this repo's existing
+// per-feature @ComponentScan convention, just crossing a JAR boundary instead of a package one.
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Spring Boot's own Gradle plugin adds -parameters to javac automatically (backend gets it for
+// free) - this module deliberately doesn't apply that plugin (it's a library, not an app - see
+// the comment at the top of this file), so without this, Spring Data JDBC's AOT repository
+// generation fails at backend's processAot time with "Parameter method 'findByFilename' parameter
+// 0 is not named" for every derived-query method on DocumentJdbcRepository - confirmed by
+// removing this and re-running :backend:processAot, which only surfaced the failure for this
+// module's repository, not backend's own (UserJdbcRepository, ChatSessionJdbcRepository, etc.),
+// pinpointing the Boot-plugin-only default as the actual cause rather than a Spring Data JDBC bug.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-parameters'
+}
+
+ext {
+    set('springAiVersion', "2.0.1")
+}
+
+// io.spring.dependency-management (not the org.springframework.boot plugin, which would force a
+// bootJar/main-class on what is a library) imports the same BOMs backend uses, so both modules
+// resolve identical versions of anything they share.
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.1.1"
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+    }
+}
+
+dependencies {
+    // Spring Framework + Spring Data JDBC types the ports/adapters/configuration are written
+    // against (@Component, @Configuration, @ConfigurationProperties, CrudRepository, etc.) -
+    // api, not implementation, since consumers need these types on their own compile classpath
+    // too (e.g. a consumer's own @Import(IngestionCoreConfiguration.class)).
+    api 'org.springframework:spring-context'
+    api 'org.springframework:spring-tx'
+    api 'org.springframework.data:spring-data-jdbc'
+    api 'org.springframework.boot:spring-boot'
+    // Just for @ConditionalOnMissingBean on IngestionJdbcConfiguration's jdbcDialect() override -
+    // lets a consumer with its own explicit JdbcDialect bean (backend's JdbcDialectConfig) take
+    // precedence over this module's default, without pulling any actual autoconfiguration classes
+    // into play (this module still has none of its own @EnableAutoConfiguration processing).
+    api 'org.springframework.boot:spring-boot-autoconfigure'
+
+    // Non-starter Spring AI artifacts only (spring-ai-model: org.springframework.ai.document.Document,
+    // TokenTextSplitter; spring-ai-vector-store: VectorStore, FilterExpressionBuilder) - the
+    // starters (spring-ai-starter-vector-store-pgvector, spring-ai-starter-model-openai) stay out
+    // of this module deliberately so it doesn't pull Boot autoconfiguration/a pgvector driver
+    // into the library itself; each consuming app supplies the real VectorStore/EmbeddingModel
+    // beans from its own starter dependencies.
+    api 'org.springframework.ai:spring-ai-model'
+    api 'org.springframework.ai:spring-ai-vector-store'
+    implementation 'org.springframework.ai:spring-ai-tika-document-reader'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
+    // Test-only: creates documents/vector_store in the Testcontainers Postgres from this
+    // module's own changelog (see src/test/resources/db/changelog) - production Liquibase
+    // ownership of this schema stays with backend (see ingestion-core's changelog comments).
+    testImplementation 'org.springframework.boot:spring-boot-starter-liquibase'
+    testImplementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    testImplementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    testImplementation 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-ollama'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // Same rationale as backend/build.gradle: rootless Podman can't run Ryuk.
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+}

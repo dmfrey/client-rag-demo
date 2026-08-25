@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: sharepoint-001-create-batch-schema
+      author: dfrey
+      comment: >
+        Spring Batch's own JobRepository schema, referenced directly from the spring-batch-core
+        jar rather than copied here - same vendor-file-reference convention as backend's
+        chat-memory-jdbc schema (db/changelog/chat/db.changelog-chat-001.yaml).
+        spring.batch.jdbc.initialize-schema is set to never so Spring Batch doesn't also try to
+        create these tables itself.
+      changes:
+        - sqlFile:
+            path: org/springframework/batch/core/schema-postgresql.sql
+            relativeToChangelogFile: false
+  - changeSet:
+      id: sharepoint-002-create-sync-state
+      author: dfrey
+      comment: >
+        Tracks the last-processed Microsoft Graph delta link per drive, so a scheduled poll picks
+        up where the previous one left off rather than re-enumerating the whole drive every run.
+        Deliberately outside Spring Batch's own ExecutionContext (a per-JobInstance scratch
+        space, not durable across separate scheduled JobInstances) - see SyncStatePort.
+      changes:
+        - createTable:
+            tableName: sharepoint_sync_state
+            columns:
+              - column:
+                  name: drive_id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: delta_link
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp with time zone
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false

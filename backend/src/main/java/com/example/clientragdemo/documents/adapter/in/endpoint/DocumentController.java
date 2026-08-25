@@ -1,13 +1,13 @@
 package com.example.clientragdemo.documents.adapter.in.endpoint;
 
-import com.example.clientragdemo.documents.application.domain.model.Document;
-import com.example.clientragdemo.documents.application.port.in.DeleteDocumentUseCase;
-import com.example.clientragdemo.documents.application.port.in.DeleteDocumentUseCase.DeleteDocumentCommand;
 import com.example.clientragdemo.documents.application.port.in.GetDocumentUseCase;
 import com.example.clientragdemo.documents.application.port.in.GetDocumentUseCase.GetDocumentQuery;
 import com.example.clientragdemo.documents.application.port.in.ListDocumentsUseCase;
 import com.example.clientragdemo.documents.application.port.in.UploadDocumentUseCase;
 import com.example.clientragdemo.documents.application.port.in.UploadDocumentUseCase.UploadDocumentCommand;
+import com.example.clientragdemo.ingestion.application.domain.model.Document;
+import com.example.clientragdemo.ingestion.application.port.in.DeleteDocumentUseCase;
+import com.example.clientragdemo.ingestion.application.port.in.DeleteDocumentUseCase.DeleteDocumentCommand;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -83,6 +83,7 @@ class DocumentController {
                 document.errorMessage(),
                 document.chunkCount(),
                 document.uploadedBy(),
+                document.source(),
                 document.createdAt(),
                 document.updatedAt());
     }
@@ -95,6 +96,7 @@ class DocumentController {
             String errorMessage,
             Integer chunkCount,
             String uploadedBy,
+            String source,
             Instant createdAt,
             Instant updatedAt
     ) {}

@@ -1,0 +1,161 @@
+// Spring Cloud Task application (see SharepointBatchApplication's @EnableTask) - polls a
+// SharePoint document library via Microsoft Graph and (re-)ingests changed files through
+// ingestion-core, then exits. Deployed as a Cloud Foundry Task (`cf run-task`, triggered
+// periodically by an external scheduler - see manifest.yml), not a long-running app: no web
+// server/actuator (see the dependency list below - deliberately no webmvc/actuator), no internal
+// @Scheduled loop. Built as a GraalVM native image (see the bootBuildImage task below) - this was
+// originally a plain JVM image specifically to avoid inheriting backend's native-image reflection
+// fights for no benefit to a short-lived task's startup latency, but CF's java_buildpack staging
+// path this app used for the plain-JVM deploy started reproducibly OOM-killing itself during the
+// JRE-expansion step (Exit status 137, reproduced on three separate cells, no platform-side
+// resolution timeline) - switching to a native image sidesteps that buildpack path entirely by
+// deploying via `docker: image:` instead (same as backend).
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.graalvm.buildtools.native' version '1.1.10'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    set('springAiVersion', "2.0.1")
+    set('springCloudVersion', "2025.1.3")
+}
+
+dependencies {
+
+    implementation project(':ingestion-core')
+
+    // Spring Boot dependencies
+    // Deliberately no spring-boot-starter-webmvc/actuator - this is a Spring Cloud Task app (see
+    // SharepointBatchApplication), not a web app. Without a web starter on the classpath, Boot
+    // infers WebApplicationType.NONE automatically, so the JVM exits cleanly once
+    // TaskJobLauncherApplicationRunner (from spring-cloud-task-batch, below) finishes the job
+    // instead of an embedded Tomcat keeping the process alive forever - the whole point of
+    // running this as a `cf run-task` rather than a long-lived pushed app.
+    implementation 'org.springframework.boot:spring-boot-starter-batch'
+    implementation 'org.springframework.boot:spring-boot-starter-liquibase'
+
+    // Spring AI Dependencies
+    // Real VectorStore/EmbeddingModel beans - ingestion-core only depends on the non-starter
+    // spring-ai-vector-store/spring-ai-model API jars (see its build.gradle), so each consuming
+    // app supplies the actual implementation, same as backend does.
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+
+    // Spring Cloud dependencies
+    // spring-cloud-starter-task pulls in spring-cloud-task-batch, whose
+    // TaskJobLauncherApplicationRunner replaces Boot's own JobLauncherApplicationRunner - it runs
+    // sharePointSyncJob synchronously at startup, sets the process exit code from the job's
+    // outcome, and correlates the TASK_EXECUTION row with the job's BATCH_JOB_EXECUTION row (see
+    // db.changelog-sharepoint-002.yaml for the schema this needs).
+    implementation 'org.springframework.cloud:spring-cloud-starter-task'
+
+    // Developer Tools
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Database dependencies
+    implementation 'org.postgresql:postgresql'
+
+    // org.eclipse.angus:angus-activation (pulled in transitively via jaxb-core, used by Tika/POI
+    // for XML/OOXML parsing via ingestion-core, nothing to do with email) registers a
+    // native-image Feature that unconditionally references jakarta.mail.Part - without that class
+    // on the classpath, native-image generation itself fails with NoClassDefFoundError even
+    // though this app never sends or parses email. Just the API is needed to satisfy the class
+    // lookup; no implementation/runtime mail functionality is used. Same gap backend's own
+    // build.gradle already documents/fixes - see its comment there for the full story.
+    runtimeOnly 'jakarta.mail:jakarta.mail-api:2.1.3'
+
+    // SharePoint dependencies
+    // Microsoft Graph Java SDK - the actual client for listing/downloading SharePoint drive
+    // items and running delta queries (see sharepoint/adapter/out/graph/). No GraphQL client
+    // exists for SharePoint; Graph is Microsoft's REST+OData surface despite the client's
+    // "graphql" phrasing - see the plan/CLAUDE.md context for this feature.
+    implementation 'com.microsoft.graph:microsoft-graph:6.42.0'
+    implementation 'com.microsoft.graph:microsoft-graph-core:3.6.1'
+    // App-only (client credentials) auth against Azure AD for a headless batch job - no
+    // interactive user in this flow.
+    implementation 'com.azure:azure-identity:1.16.2'
+
+    // Test dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.batch:spring-batch-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.ai:spring-ai-spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-ollama'
+
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // Same rationale as backend/build.gradle: rootless Podman can't run Ryuk.
+    environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+}
+
+tasks.named('bootBuildImage') {
+    // Separate image name from backend's (ghcr.io/dmfrey/client-rag-demo) - these are two
+    // independently deployed apps sharing one repo, not one app.
+    imageName = "ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:${project.version}"
+    // Switched to a native image (was a plain JVM image - see git history for the original
+    // rationale against it) after CF's java_buildpack staging repeatedly OOM'd on this app's
+    // deploy path (Exit status 137 during the JRE-expansion step, reproduced on three different
+    // cells) with no clear resolution timeline from the platform team. A native image sidesteps
+    // that staging pipeline entirely - it deploys via `docker: image:` (see manifest.yml), the
+    // same path backend already uses successfully. Mirrors backend/build.gradle's own
+    // BP_NATIVE_IMAGE args - this app pulls in the same Tika/PDFBox/POI/XMLBeans reflection
+    // surface via ingestion-core, so it needs the same charset/resource-bundle/thread-count
+    // mitigations backend already found necessary (see that file's comment for the full story
+    // behind each one).
+    environment = [
+            'BP_NATIVE_IMAGE': 'true',
+            // --initialize-at-build-time=<packages>: a real CI run failed with "An object of type
+            // 'org.slf4j.helpers.SubstituteServiceProvider' was found in the image heap. This
+            // type, however, is marked for initialization at image run time" - something in this
+            // app's specific dependency mix (spring-cloud-task/spring-batch/microsoft-graph,
+            // absent from backend's classpath) touches SLF4J 2.x's ServiceLoader-based provider
+            // resolution during the build-time analysis phase anyway, a class-initialization
+            // ordering conflict, not a missing-registration gap (backend never hit this with the
+            // same charset/resource-bundle/thread-count args above). Fixing individual classes one
+            // CI attempt at a time (SubstituteServiceProvider, then NOP_FallbackServiceProvider,
+            // then ch.qos.logback.classic.spi.LogbackServiceProvider, then
+            // org.slf4j.helpers.SubstituteLoggerFactory) kept surfacing the next class in the same
+            // family, so this widened to whole-package (org.slf4j, ch.qos.logback.classic.spi) -
+            // which still wasn't enough: ch.qos.logback.classic.LoggerContext (a sibling package,
+            // ch.qos.logback.classic itself rather than its .spi subpackage) hit the identical
+            // conflict on the very next attempt. Widened once more to the whole ch.qos.logback
+            // package rather than continuing to enumerate subpackages one at a time.
+            // com.fasterxml.jackson.core.Base64Variant (plus its nested PaddingReadBehaviour enum -
+            // a class-name override doesn't cover a class's own nested types) hit the identical
+            // conflict for an unrelated reason (Jackson's constant table, not SLF4J), fixed the
+            // same way. Forcing all of these to build-time init is safe: none of them do I/O or
+            // hold non-deterministic state, they're exactly the kind of class GraalVM's own docs
+            // recommend overriding to build-time when a run-time-marked class turns out to already
+            // be touched at build time.
+            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j,ch.qos.logback,com.fasterxml.jackson.core.Base64Variant,com.fasterxml.jackson.core.Base64Variant$PaddingReadBehaviour',
+    ]
+}

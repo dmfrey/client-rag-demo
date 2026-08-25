@@ -2,9 +2,9 @@ package com.example.clientragdemo;
 
 import com.example.clientragdemo.configuration.LiquibaseRuntimeHints;
 import com.example.clientragdemo.configuration.OpenAiRuntimeHints;
-import com.example.clientragdemo.configuration.PdfBoxRuntimeHints;
-import com.example.clientragdemo.configuration.PoiRuntimeHints;
-import com.example.clientragdemo.configuration.XmlBeansRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.PdfBoxRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.PoiRuntimeHints;
+import com.example.clientragdemo.ingestion.configuration.XmlBeansRuntimeHints;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

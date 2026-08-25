@@ -1,5 +1,6 @@
 package com.example.clientragdemo.configuration;
 
+import com.example.clientragdemo.ingestion.application.domain.service.DocumentNotFoundException;
 import com.example.clientragdemo.shared.exception.ConflictException;
 import com.example.clientragdemo.shared.exception.NotFoundException;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,14 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(NotFoundException.class)
     ResponseEntity<Map<String, String>> handleNotFound(NotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
+    }
+
+    // ingestion-core's own exception, not backend's shared.exception.NotFoundException hierarchy
+    // - that module has no HTTP concern of its own (sharepoint-batch, its other consumer, has no
+    // REST API at all), so it doesn't depend on this hierarchy. Same 404 mapping either way.
+    @ExceptionHandler(DocumentNotFoundException.class)
+    ResponseEntity<Map<String, String>> handleDocumentNotFound(DocumentNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
     }
 

@@ -1,6 +1,6 @@
 package com.example.clientragdemo.documents.application.port.in;
 
-import com.example.clientragdemo.documents.application.domain.model.Document;
+import com.example.clientragdemo.ingestion.application.domain.model.Document;
 
 import java.util.List;
 

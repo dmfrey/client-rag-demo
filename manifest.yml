@@ -99,3 +99,62 @@ applications:
     instances: 1
     routes:
       - route: client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+
+  - name: client-rag-demo-sharepoint-batch
+    # A Spring Cloud Task app (see SharepointBatchApplication's @EnableTask/CLAUDE.md) - runs
+    # sharePointSyncJob once to completion and exits, rather than staying up as a long-lived
+    # process. `cf push` here only STAGES the droplet (instances: 0 - it's never actually
+    # started as a running app); the job itself is triggered on demand or on a schedule via:
+    #   cf run-task client-rag-demo-sharepoint-batch
+    # (an external scheduler - e.g. Scheduler for VMware Tanzu, or plain cron calling `cf
+    # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
+    # its earlier @Scheduled-based design).
+    #
+    # Deployed via Docker/GHCR now, same as backend - this app was originally a plain JVM app
+    # pushed directly from its bootJar via java_buildpack specifically to avoid the native-image
+    # reflection fights backend already documents, but that buildpack's staging path started
+    # reproducibly OOM-killing itself (Exit status 137 during the JRE-expansion step, on three
+    # separate cells, no clear platform-side resolution timeline) - switched to a GraalVM native
+    # image (see sharepoint-batch/build.gradle's bootBuildImage task) to sidestep that staging
+    # pipeline entirely, the same way backend already avoids it.
+    docker:
+      image: ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:latest
+      # Same GHCR-visibility note as backend's own entry above - needs
+      # `cf push --docker-username <github-username>` (prompts for a GitHub PAT with
+      # read:packages) unless the package has been made public.
+    memory: 1G
+    # Never started as a long-running process - see the note above. `cf run-task` uses the
+    # staged droplet directly regardless of this app's own "started"/"stopped" state.
+    instances: 0
+    no-route: true
+    env:
+      # Same shared Postgres/genai-service bindings as backend - see its own env: comments above
+      # for why real values come from vars.yml rather than VCAP_SERVICES.
+      SPRING_DATASOURCE_URL: ((db-jdbc-url))
+      SPRING_DATASOURCE_USERNAME: ((db-username))
+      SPRING_DATASOURCE_PASSWORD: ((db-password))
+      SPRING_AI_OPENAI_BASE_URL: https://genai-proxy.sys.tas-ndc.kuhn-labs.com/tanzu-all-models-1a56b7a/openai
+      SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
+      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "256"
+      # Real SharePoint/Graph credentials aren't available yet (see CLAUDE.md) - this deployment
+      # exercises the pipeline against a mounted rag-docs-volume (block-storage, bound below)
+      # instead, standing in for a real SharePoint drive per the client's own suggestion that an
+      # NFS-style mount might substitute for SharePoint in some environments.
+      APP_INGESTION_SOURCE: filesystem
+      # block-storage's bind schema publishes no bind-time parameters (confirmed via `cf curl
+      # /v3/service_plans?service_offering_names=block-storage` - schemas.service_binding.create
+      # is empty), so there's no way to request a specific container mount path up front - CF
+      # assigns a GUID-based one per binding (/var/vcap/data/<binding-instance-guid>) that can
+      # only be read back after binding, from `cf env client-rag-demo-sharepoint-batch`'s
+      # VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir. This placeholder needs
+      # replacing with that real value (`cf set-env ... APP_FILESYSTEM_SOURCE_PATH <path>` then
+      # `cf restage`) after every fresh bind - it will not work as pushed. A real gap worth fixing
+      # (e.g. by having the app read VCAP_SERVICES itself at startup) if this filesystem source
+      # becomes more than a one-off test.
+      APP_FILESYSTEM_SOURCE_PATH: /var/vcap/data/REPLACE-WITH-ACTUAL-BINDING-GUID-FROM-VCAP-SERVICES
+    services:
+      - client-rag-demo-db
+      - client-rag-demo-ai
+      - rag-docs-volume

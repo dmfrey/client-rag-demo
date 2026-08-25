@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: documents-004-uploaded-by-nullable
+      author: dfrey
+      comment: >
+        uploaded_by was NOT NULL from the original web-upload-only design (documents-001), before
+        SOURCE_SHAREPOINT/SOURCE_FILESYSTEM rows existed - an automated ingestion has no human
+        uploader, so ChangedItemProcessor (sharepoint-batch) legitimately saves null here for
+        those sources. Caught by IngestDocumentServiceIT failing with a real
+        DataIntegrityViolationException against a real Postgres, not assumed.
+      changes:
+        - dropNotNullConstraint:
+            tableName: documents
+            columnName: uploaded_by
+            columnDataType: varchar(255)

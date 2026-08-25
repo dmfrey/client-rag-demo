@@ -1,8 +1,8 @@
 package com.example.clientragdemo.documents.application.domain.service;
 
-import com.example.clientragdemo.documents.application.domain.model.Document;
 import com.example.clientragdemo.documents.application.port.in.ListDocumentsUseCase;
-import com.example.clientragdemo.documents.application.port.out.LoadAllDocumentsPort;
+import com.example.clientragdemo.ingestion.application.domain.model.Document;
+import com.example.clientragdemo.ingestion.application.port.out.LoadAllDocumentsPort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
