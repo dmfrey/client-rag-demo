@@ -71,12 +71,14 @@ class UserControllerIT {
                 Void.class);
         assertThat(changeResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
+        // authHeaders' session already acknowledged the banner (see registerAndLogin) - reusing
+        // its Cookie header here is enough for BannerAckFilter, regardless of auth state.
         ResponseEntity<String> oldPasswordLogin = restTemplate.postForEntity(
-                "/api/auth/login", new AuthRequest(username, "password123"), String.class);
+                "/api/auth/login", new HttpEntity<>(new AuthRequest(username, "password123"), authHeaders), String.class);
         assertThat(oldPasswordLogin.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 
         ResponseEntity<UserResponse> newPasswordLogin = restTemplate.postForEntity(
-                "/api/auth/login", new AuthRequest(username, "newpassword456"), UserResponse.class);
+                "/api/auth/login", new HttpEntity<>(new AuthRequest(username, "newpassword456"), authHeaders), UserResponse.class);
         assertThat(newPasswordLogin.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
@@ -92,12 +94,24 @@ class UserControllerIT {
     }
 
     private HttpHeaders registerAndLogin(String username) {
-        AuthRequest credentials = new AuthRequest(username, "password123");
-        restTemplate.postForEntity("/api/auth/register", credentials, Void.class);
-        ResponseEntity<Void> loginResponse = restTemplate.postForEntity("/api/auth/login", credentials, Void.class);
+        // BannerAckFilter gates /api/auth/register and /api/auth/login until this session has
+        // acknowledged the consent banner (see SecurityConfig) - ack first and carry that
+        // session's cookie through both calls.
+        ResponseEntity<Void> ackResponse = restTemplate.postForEntity("/api/banner/ack", null, Void.class);
+        String bannerCookie = ackResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        HttpHeaders bannerHeaders = new HttpHeaders();
+        bannerHeaders.add(HttpHeaders.COOKIE, bannerCookie);
 
+        AuthRequest credentials = new AuthRequest(username, "password123");
+        restTemplate.postForEntity("/api/auth/register", new HttpEntity<>(credentials, bannerHeaders), Void.class);
+        ResponseEntity<Void> loginResponse = restTemplate.postForEntity(
+                "/api/auth/login", new HttpEntity<>(credentials, bannerHeaders), Void.class);
+
+        // Login doesn't always issue a new Set-Cookie - only when session-fixation protection
+        // actually changes the session ID. Reuse the banner-ack cookie in that case.
+        String loginCookie = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
         HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.COOKIE, loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE));
+        headers.add(HttpHeaders.COOKIE, (loginCookie != null) ? loginCookie : bannerCookie);
         return headers;
     }
 

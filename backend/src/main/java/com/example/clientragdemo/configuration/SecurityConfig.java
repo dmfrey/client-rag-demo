@@ -2,7 +2,9 @@ package com.example.clientragdemo.configuration;
 
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -32,6 +34,7 @@ import java.util.List;
  * CSRF tokens on APIs like this one.
  */
 @Configuration
+@EnableConfigurationProperties(BannerProperties.class)
 class SecurityConfig {
 
     @Bean
@@ -43,7 +46,8 @@ class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .securityContext(context -> context.securityContextRepository(securityContextRepository))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/banner").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/banner/ack", "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers(EndpointRequest.to("health", "prometheus")).permitAll()
                         .anyRequest().authenticated())
                 .logout(logout -> logout
@@ -53,6 +57,22 @@ class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
 
         return http.build();
+    }
+
+    @Bean
+    BannerController bannerController(BannerProperties properties) {
+        return new BannerController(properties);
+    }
+
+    // Default FilterRegistrationBean order (Ordered.LOWEST_PRECEDENCE) runs this after Spring
+    // Security's own filter chain - see BannerAckFilter's own comment for why that ordering is
+    // exactly what this app needs.
+    @Bean
+    FilterRegistrationBean<BannerAckFilter> bannerAckFilterRegistration(BannerProperties properties) {
+        FilterRegistrationBean<BannerAckFilter> registration = new FilterRegistrationBean<>(new BannerAckFilter(properties));
+        registration.setName("bannerAckFilter");
+        registration.addUrlPatterns("/*");
+        return registration;
     }
 
     @Bean
