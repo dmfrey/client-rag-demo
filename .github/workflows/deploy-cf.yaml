@@ -68,15 +68,33 @@ jobs:
           cf auth "$CF_USERNAME" "$CF_PASSWORD"
           cf target -o "$CF_ORG" -s "$CF_SPACE"
 
-      # Mirrors vars.yml.example's shape (see repo root) - written at runtime from GitHub Secrets
-      # rather than committing a real vars.yml, same reason vars.yml itself is gitignored.
-      - name: Write vars file
-        env:
-          DB_JDBC_URL: ${{ secrets.CF_DB_JDBC_URL }}
-          DB_USERNAME: ${{ secrets.CF_DB_USERNAME }}
-          DB_PASSWORD: ${{ secrets.CF_DB_PASSWORD }}
-          AI_API_KEY: ${{ secrets.CF_AI_API_KEY }}
+      # Reads the same client-rag-demo-db-key/client-rag-demo-ai-key service keys the manifest.yml
+      # header comment already documents for the manual local workflow, rather than duplicating
+      # these values as separate GitHub secrets - CF stays the single source of truth, and CI only
+      # needs the CF_USERNAME/CF_PASSWORD login above. `cf service-key` prints a "Getting key..."
+      # header line before the JSON body; `sed -n '/^{/,$p'` strips it regardless of exact wording.
+      # ::add-mask:: registers each value with the Actions runner so it's redacted from all
+      # subsequent log output, the same protection secrets.* gets automatically - required here
+      # since these values come from `cf service-key`, not the secrets context, so nothing masks
+      # them by default.
+      - name: Fetch service credentials and write vars file
         run: |
+          cf create-service-key client-rag-demo-db client-rag-demo-db-key >/dev/null 2>&1 || true
+          cf create-service-key client-rag-demo-ai client-rag-demo-ai-key >/dev/null 2>&1 || true
+
+          DB_JSON=$(cf service-key client-rag-demo-db client-rag-demo-db-key | sed -n '/^{/,$p')
+          AI_JSON=$(cf service-key client-rag-demo-ai client-rag-demo-ai-key | sed -n '/^{/,$p')
+
+          DB_JDBC_URL=$(echo "$DB_JSON" | jq -r '.credentials.jdbcUrl')
+          DB_USERNAME=$(echo "$DB_JSON" | jq -r '.credentials.user')
+          DB_PASSWORD=$(echo "$DB_JSON" | jq -r '.credentials.password')
+          AI_API_KEY=$(echo "$AI_JSON" | jq -r '.credentials.endpoint.api_key')
+
+          echo "::add-mask::$DB_JDBC_URL"
+          echo "::add-mask::$DB_USERNAME"
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$AI_API_KEY"
+
           cat > vars.yml <<VARS_EOF
           db-jdbc-url: "$DB_JDBC_URL"
           db-username: "$DB_USERNAME"
