@@ -31,19 +31,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26'
-
-      - name: Build frontend
-        working-directory: frontend
+      # Reuses frontend-package.yaml's published artifact rather than building from source a
+      # second, separate way - guarantees this deploy ships the exact same bundle a client
+      # deploying offline would get, and drops the Node/npm setup entirely from this job. That
+      # release is rebuilt on every frontend/** push (see frontend-package.yaml) - by the time a
+      # human approves this job's environment gate, it's had time to publish the current build,
+      # the same reasoning the gate already relies on for the native-image workflows finishing.
+      # The bundle ships with a placeholder in place of a real backend URL (see
+      # frontend-package.yaml's own comment for why); this sed swap is the same one documented in
+      # that release's own notes for a client deploying it themselves.
+      - name: Download and prepare frontend bundle
         env:
-          # Must match manifest.yml's client-rag-demo-backend route exactly - baked in at build
-          # time since this is a static SPA (see CLAUDE.md's Tech Stack/Deployment sections).
-          VITE_API_BASE_URL: https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
+          GH_TOKEN: ${{ github.token }}
         run: |
-          npm ci
-          npm run build
+          gh release download frontend-latest --repo ${{ github.repository }} --pattern '*.tar.gz' --output frontend-dist.tar.gz --clobber
+          mkdir -p frontend/dist
+          tar -xzf frontend-dist.tar.gz -C frontend/dist
+          find frontend/dist -name '*.js' -exec sed -i 's|__RUNTIME_API_BASE_URL__|https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com|g' {} +
 
       - name: Install cf CLI
         run: |
