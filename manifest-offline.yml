@@ -1,0 +1,168 @@
+# OFFLINE variant of manifest.yml: deploys the backend and sharepoint-batch as plain executable
+# jars (java_buildpack) instead of pulling Docker images from GHCR, and the frontend from its
+# pre-built bundle. For a CF foundation/network with no access to ghcr.io or npm.
+#
+# Expected layout next to this file (latest GitHub Packages SNAPSHOT file names - they change on each publish; update `path:` below):
+#
+#   manifest-offline.yml
+#   vars.yml                                          (copy of vars.yml.example, filled in)
+#   client-rag-demo-backend-0.0.1-20260825.162146-1.jar        (GitHub Packages: com.example:client-rag-demo-backend)
+#   client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
+#   frontend-dist/                                    (unzipped frontend-latest release asset, with
+#                                                      __RUNTIME_API_BASE_URL__ already sed-replaced
+#                                                      by the backend's real route - see the
+#                                                      frontend app below)
+#
+# Then: cf push -f manifest-offline.yml --vars-file vars.yml
+#
+# Prerequisites on the (offline) foundation:
+#   - an offline-capable java_buildpack that bundles a Java 25 JRE (the jars are built for 25).
+#   - staticfile_buildpack.
+version: 1
+applications:
+  - name: client-rag-demo-backend
+    path: ./client-rag-demo-backend-0.0.1-20260825.162146-1.jar
+    buildpacks:
+      - java_buildpack
+    memory: 1500M  # JVM, not native image - needs more headroom than the 1G the native build ran in
+    instances: 1
+    routes:
+      - route: client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
+    # CF's own health check model doesn't distinguish liveness/readiness the way Kubernetes
+    # does (see application.yaml's management.endpoint.health.probes - that split is for a
+    # Kubernetes-based platform) - the aggregate endpoint is the right one to point CF at here.
+    health-check-type: http
+    health-check-http-endpoint: /actuator/health
+    env:
+      # Activates application-cloud.yaml - cross-origin session cookies (SameSite=None; Secure)
+      # and forwarded-headers handling, both required because the frontend and backend are
+      # separate routes/origins here, not one shared origin.
+      SPRING_PROFILES_ACTIVE: cloud
+      # java_buildpack adds java-cfenv-boot when services are bound, which rebinds the datasource
+      # and activates a `cloud` profile on its own - redundant here (datasource is set explicitly
+      # below) and known to break @EnableJdbcRepositories wiring (see CLAUDE.md).
+      JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
+      # The jar targets Java 25.
+      JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
+      # This app doesn't parse VCAP_SERVICES (no java-cfenv/spring-cloud-bindings dependency, and
+      # spring-cloud-bindings wouldn't help anyway - confirmed by reading its source, it only
+      # reads bindings materialized as files under $SERVICE_BINDING_ROOT/$CNB_BINDINGS, the
+      # Kubernetes/Cloud-Native-Buildpacks convention, never VCAP_SERVICES) - binding
+      # client-rag-demo-db below makes its credentials visible in VCAP_SERVICES but doesn't
+      # configure the datasource from them. Real values come from a service key instead
+      # (`cf create-service-key client-rag-demo-db client-rag-demo-db-key`, then
+      # `cf service-key client-rag-demo-db client-rag-demo-db-key`) - see vars.yml.example for
+      # where they go; never put real credentials directly in this file, it's committed to git.
+      SPRING_DATASOURCE_URL: ((db-jdbc-url))
+      SPRING_DATASOURCE_USERNAME: ((db-username))
+      SPRING_DATASOURCE_PASSWORD: ((db-password))
+      # Same story for client-rag-demo-ai (ai-models/tanzu-all-models, an OpenAI-compatible proxy
+      # - see build.gradle): `cf create-service-key client-rag-demo-ai client-rag-demo-ai-key`,
+      # then `cf service-key client-rag-demo-ai client-rag-demo-ai-key` for
+      # credentials.endpoint.openai_api_base / .api_key (already a complete, ready-to-use base
+      # URL - no /v1 to append). credentials.endpoint.config_url (GET, bearer auth) lists exactly
+      # which models this binding actually grants access to, each tagged CHAT/EMBEDDING/TOOLS/
+      # VISION - openai/gpt-oss-120b (CHAT) and nomic-ai/nomic-embed-text-v2-moe (EMBEDDING) are
+      # what's configured below, picked from that list and confirmed working end-to-end
+      # (including a real embeddings call confirming 768 dimensions, matching vector_store's
+      # schema exactly - no migration needed). Neither model name is a secret, unlike the two
+      # settings above - only the API key needs to come from vars.yml.
+      SPRING_AI_OPENAI_BASE_URL: https://genai-proxy.sys.tas-ndc.kuhn-labs.com/tanzu-all-models-1a56b7a/openai
+      SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
+      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      # nomic-embed-text-v2-moe on this proxy enforces a 512-token limit - well under
+      # TokenTextSplitter's 800-token default (application.yaml). TokenTextSplitter's chunkSize
+      # is a hard cap under its own tokenizer (jtokkit's CL100K_BASE, an OpenAI/GPT-style BPE
+      # encoding - see TokenTextSplitter.doSplit's tokens.subList(0, Math.min(chunkSize, ...))),
+      # but this model almost certainly uses a different tokenizer (nomic-embed-text-v2-moe is a
+      # BERT-family model, so most likely WordPiece/SentencePiece). First observed as a ~28%
+      # disagreement (a 400-jtokkit-token chunk the model rejected as 513+), which is what set the
+      # original 256 value (exactly half the 512 limit). A real sharepoint-batch run against the
+      # client's document corpus then hit the same overflow on 2 documents *at* chunkSize=256 -
+      # roughly a 2x disagreement, not 28%, on whatever those documents' specific content is
+      # (tables/unusual formatting/non-English text tokenize very differently between BPE and
+      # WordPiece/SentencePiece). No value here is a guaranteed fix against an unknown worst case,
+      # only lower-probability - 128 gives ~4x margin even assuming that same 2x disagreement
+      # repeats. If a document still overflows at this size, that document's content is
+      # pathological enough to need its own investigation, not another blanket chunkSize drop.
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "128"
+      # Must match the frontend's actual route below exactly (scheme + host, no trailing slash).
+      APP_CORS_ALLOWED_ORIGINS: https://client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+    services:
+      # postgres/on-demand-postgres-db. This app needs the pgvector extension available
+      # (db/changelog/documents/db.changelog-documents-002.yaml runs `CREATE EXTENSION vector`) -
+      # this is VMware Tanzu for Postgres, which generally supports it, but that hasn't been
+      # confirmed against this specific instance/plan yet - if the Liquibase migration fails on
+      # that CREATE EXTENSION step, that's the first thing to check.
+      - client-rag-demo-db
+      # ai-models/tanzu-all-models - see the SPRING_AI_OPENAI_* comment above.
+      - client-rag-demo-ai
+
+  - name: client-rag-demo-frontend
+    # Pre-built static bundle (unzipped frontend-latest release asset), served as-is. Before
+    # pushing, point it at the real backend route:
+    #   grep -rl __RUNTIME_API_BASE_URL__ frontend-dist | xargs sed -i 's|__RUNTIME_API_BASE_URL__|https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com|g'
+    # (use `sed -i ''` on macOS). No Node/npm needed.
+    path: ./frontend-dist
+    buildpacks:
+      - staticfile_buildpack
+    memory: 64M
+    instances: 1
+    routes:
+      - route: client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+
+  - name: client-rag-demo-sharepoint-batch
+    # A Spring Cloud Task app (see SharepointBatchApplication's @EnableTask/CLAUDE.md) - runs
+    # sharePointSyncJob once to completion and exits, rather than staying up as a long-lived
+    # process. `cf push` here only STAGES the droplet (instances: 0 - it's never actually
+    # started as a running app); the job itself is triggered on demand or on a schedule via:
+    #   cf run-task client-rag-demo-sharepoint-batch
+    # (an external scheduler - e.g. Scheduler for VMware Tanzu, or plain cron calling `cf
+    # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
+    # its earlier @Scheduled-based design).
+    #
+    # Plain JVM jar via java_buildpack here (no Docker/GHCR access offline).
+    path: ./client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
+    buildpacks:
+      - java_buildpack
+    memory: 1G
+    # Never started as a long-running process - see the note above. `cf run-task` uses the
+    # staged droplet directly regardless of this app's own "started"/"stopped" state.
+    instances: 0
+    no-route: true
+    env:
+      JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
+      JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
+      # Same shared Postgres/genai-service bindings as backend - see its own env: comments above
+      # for why real values come from vars.yml rather than VCAP_SERVICES.
+      SPRING_DATASOURCE_URL: ((db-jdbc-url))
+      SPRING_DATASOURCE_USERNAME: ((db-username))
+      SPRING_DATASOURCE_PASSWORD: ((db-password))
+      SPRING_AI_OPENAI_BASE_URL: https://genai-proxy.sys.tas-ndc.kuhn-labs.com/tanzu-all-models-1a56b7a/openai
+      SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
+      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      # Kept in sync with the backend app's own APP_DOCUMENTS_INGESTION_CHUNK_SIZE above - see its
+      # comment for why this is 128, not the original 256.
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "128"
+      # Real SharePoint/Graph credentials aren't available yet (see CLAUDE.md) - this deployment
+      # exercises the pipeline against a mounted rag-docs-volume (block-storage, bound below)
+      # instead, standing in for a real SharePoint drive per the client's own suggestion that an
+      # NFS-style mount might substitute for SharePoint in some environments.
+      APP_INGESTION_SOURCE: filesystem
+      # block-storage's bind schema publishes no bind-time parameters (confirmed via `cf curl
+      # /v3/service_plans?service_offering_names=block-storage` - schemas.service_binding.create
+      # is empty), so there's no way to request a specific container mount path up front - CF
+      # assigns a GUID-based one per binding (/var/vcap/data/<binding-instance-guid>) that can
+      # only be read back after binding, from `cf env client-rag-demo-sharepoint-batch`'s
+      # VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir. This placeholder needs
+      # replacing with that real value (`cf set-env ... APP_FILESYSTEM_SOURCE_PATH <path>` then
+      # `cf restage`) after every fresh bind - it will not work as pushed. A real gap worth fixing
+      # (e.g. by having the app read VCAP_SERVICES itself at startup) if this filesystem source
+      # becomes more than a one-off test.
+      APP_FILESYSTEM_SOURCE_PATH: /var/vcap/data/REPLACE-WITH-ACTUAL-BINDING-GUID-FROM-VCAP-SERVICES
+    services:
+      - client-rag-demo-db
+      - client-rag-demo-ai
+      - rag-docs-volume
