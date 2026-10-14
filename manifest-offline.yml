@@ -8,7 +8,7 @@
 #   vars.yml                                          (copy of vars.yml.example, filled in)
 #   client-rag-demo-backend-0.0.1-20260825.162146-1.jar        (GitHub Packages: com.example:client-rag-demo-backend)
 #   client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
-#   frontend-dist/                                    (unzipped frontend-latest release asset, with
+#   frontend-dist/                                    (extracted frontend-dist.tar.gz from the frontend-latest release, with
 #                                                      __RUNTIME_API_BASE_URL__ already sed-replaced
 #                                                      by the backend's real route - see the
 #                                                      frontend app below)
@@ -100,7 +100,7 @@ applications:
       - client-rag-demo-ai
 
   - name: client-rag-demo-frontend
-    # Pre-built static bundle (unzipped frontend-latest release asset), served as-is. Before
+    # Pre-built static bundle (extracted frontend-dist.tar.gz from the frontend-latest release), served as-is. Before
     # pushing, point it at the real backend route:
     #   grep -rl __RUNTIME_API_BASE_URL__ frontend-dist | xargs sed -i 's|__RUNTIME_API_BASE_URL__|https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com|g'
     # (use `sed -i ''` on macOS). No Node/npm needed.

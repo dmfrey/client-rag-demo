@@ -104,7 +104,7 @@ For a foundation/network with no access to GHCR, npm or Maven Central. Uses
 |---|---|
 | `client-rag-demo-backend-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-backend` |
 | `client-rag-demo-sharepoint-batch-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-sharepoint-batch` |
-| Frontend bundle | GitHub Release `frontend-latest` (asset built by `frontend-package.yaml`) |
+| `frontend-dist.tar.gz` | GitHub Release `frontend-latest` (asset built by `frontend-package.yaml`) |
 | `manifest-offline.yml`, `vars.yml.example` | this repo |
 
 Packages are SNAPSHOTs, so file names carry a timestamp, e.g.
@@ -150,7 +150,7 @@ The frontend bundle is built with a placeholder backend URL. Replace it with you
 before pushing (no Node/npm required):
 
 ```bash
-unzip frontend-dist.zip -d frontend-dist
+mkdir -p frontend-dist && tar -xzf frontend-dist.tar.gz -C frontend-dist
 grep -rl __RUNTIME_API_BASE_URL__ frontend-dist | xargs sed -i \
   's|__RUNTIME_API_BASE_URL__|https://<your backend FQDN>|g'      # macOS: sed -i ''
 ```
