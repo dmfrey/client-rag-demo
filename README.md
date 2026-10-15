@@ -13,7 +13,7 @@ pgvector.
 
 | Module | What it is |
 |---|---|
-| `backend/` | Spring Boot 4 REST API (Java 25). Shipped as a GraalVM native-image container, or as a plain executable jar. |
+| `backend/` | Spring Boot 4 REST API (Java 25). Deployed as a plain executable jar; reads its Postgres and model-proxy credentials from the bound Cloud Foundry services (`java-cfenv`). |
 | `frontend/` | React + Vite + TypeScript single-page app, served as static files. |
 | `ingestion-core/` | Plain Java library: the document-ingestion slice shared by `backend` and `sharepoint-batch`. |
 | `sharepoint-batch/` | Spring Batch / Spring Cloud Task job that ingests from SharePoint or a filesystem. Runs once and exits. |
@@ -88,9 +88,11 @@ cd frontend && npm test
 
 ## Standard deployment (online)
 
-`manifest.yml` deploys all three apps to Cloud Foundry: the backend and batch from GHCR container
-images (built by CI), the frontend via `staticfile_buildpack`. Credentials come from `vars.yml`
-(copy `vars.yml.example`; never commit it). `deploy-cf.yaml` automates this behind a
+`manifest.yml` deploys all three apps to Cloud Foundry: the backend as an executable jar
+(`java_buildpack`; `./gradlew :backend:bootJar`), the batch service from a GHCR container image
+(built by CI), the frontend via `staticfile_buildpack`. The backend needs no credentials in the
+manifest - it reads Postgres and the model proxy from its service bindings. The batch service
+still takes its credentials from `vars.yml` (copy `vars.yml.example`; never commit it). `deploy-cf.yaml` automates this behind a
 required-reviewer approval.
 
 ## Deploying in an offline environment
@@ -117,8 +119,12 @@ lines in the manifest to match what you downloaded.
 - Service instances `client-rag-demo-db` (PostgreSQL **with the pgvector extension available**)
   and `client-rag-demo-ai` (OpenAI-compatible chat + embedding models), plus `rag-docs-volume`
   if using the filesystem source.
-- Create service keys to obtain credentials, and fill in `vars.yml`:
-  `db-jdbc-url`, `db-username`, `db-password`, `ai-api-key`.
+- **Backend:** bind the two services (the manifest does this) - that is all. The backend finds
+  Postgres and the model proxy itself from `VCAP_SERVICES` (`java-cfenv`). The AI service binding
+  must carry the `genai` tag (the Tanzu `ai-models` plan does) and expose `credentials.endpoint`
+  with a `config_url`, which the backend uses to list the models the binding grants.
+- **sharepoint-batch** (if you deploy it): still takes credentials from `vars.yml` - create service
+  keys and fill in `db-jdbc-url`, `db-username`, `db-password`, `ai-api-key`.
 
 ### 3. Values you must change
 
@@ -129,16 +135,16 @@ Everything in `manifest-offline.yml` that is specific to the original foundation
 | Backend route `client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com` | backend `routes` | your backend FQDN |
 | Frontend route `client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com` | frontend `routes` | your frontend FQDN |
 | `APP_CORS_ALLOWED_ORIGINS` | backend env | `https://<frontend FQDN>` exactly (scheme + host, no trailing slash) |
-| `SPRING_AI_OPENAI_BASE_URL` | backend **and** batch env | your model endpoint's base URL (`https://genai-proxy.sys.tas-ndc.kuhn-labs.com/...` is this foundation's) |
-| `SPRING_AI_OPENAI_CHAT_MODEL` | backend and batch env | a chat model your endpoint serves (currently `openai/gpt-oss-120b`) |
-| `SPRING_AI_OPENAI_EMBEDDING_MODEL` | backend and batch env | an embedding model your endpoint serves (currently `nomic-ai/nomic-embed-text-v2-moe`) — see warning below |
+| `SPRING_AI_OPENAI_BASE_URL` | **batch env only** | your model endpoint's base URL (`https://genai-proxy.sys.tas-ndc.kuhn-labs.com/...` is this foundation's). The backend no longer has this - it comes from the AI service binding |
+| `SPRING_AI_OPENAI_CHAT_MODEL` | backend and batch env | a chat model your AI service grants (currently `openai/gpt-oss-120b`). The backend looks this name up in the binding's model list, so it must match exactly |
+| `SPRING_AI_OPENAI_EMBEDDING_MODEL` | backend and batch env | an embedding model your AI service grants (currently `nomic-ai/nomic-embed-text-v2-moe`), looked up by exact name — see warning below |
 | `APP_DOCUMENTS_INGESTION_CHUNK_SIZE` | backend and batch env | `128` is tuned for a 512-token embedding limit; adjust to your model, keep both apps equal |
 | Service names `client-rag-demo-db`, `client-rag-demo-ai`, `rag-docs-volume` | `services:` | your service instance names |
 | `APP_INGESTION_SOURCE` | batch env | `filesystem` (current) or `graph` |
 | `APP_FILESYSTEM_SOURCE_PATH` | batch env | the volume mount path (see `cf env`; changes on each fresh bind) |
 | Graph settings (`APP_SHAREPOINT_TENANT_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`, `_SITE_ID`, `_DRIVE_ID`) | batch env | only if `APP_INGESTION_SOURCE=graph`; not in the manifest by default — add them |
 | jar `path:` values | backend, batch | the actual downloaded file names |
-| `memory` | backend (1500M) | tune for the JVM; staging a JVM app can need more than a native image |
+| `memory` | backend (1500M) | tune for the JVM; staging or running a JVM app can need more memory than expected |
 
 > **Embedding model warning.** The pgvector column is `vector(768)`. The embedding model must
 > output **768 dimensions**; a different dimension requires a schema migration and a full
@@ -184,20 +190,24 @@ cf run-task client-rag-demo-sharepoint-batch
 
 ### Offline caveats
 
-- The JVM backend starts slower than the native image; consider a longer health-check timeout.
+- A JVM backend start (with Liquibase migrations) is slow; the manifest allows 180s for the health check - raise `timeout` if your foundation is slower.
 - `java_buildpack` staging has previously been OOM-killed (exit 137) on some cells; retry or
   raise staging memory if it recurs.
-- Both Java apps set `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'` to stop the buildpack's
-  `java-cfenv` from interfering with datasource wiring. Keep it.
+- Both Java apps set `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'`. For the backend this stops
+  `java_buildpack` injecting a second copy of `java-cfenv` next to the one bundled in the jar; for
+  sharepoint-batch it avoids the buildpack's own datasource rebinding. Keep it.
+- If the backend fails at startup with "Unable to find chat/embedding model with name ...", the
+  configured model name is not in the AI service's model list - check
+  `SPRING_AI_OPENAI_CHAT_MODEL` / `SPRING_AI_OPENAI_EMBEDDING_MODEL`.
 
 ## CI/CD
 
 | Workflow | Purpose |
 |---|---|
-| `native-image.yaml` | Test backend; publish native-image container (GHCR) and executable jar (GitHub Packages). |
-| `sharepoint-batch.yaml` | Same for the batch service. |
+| `backend.yaml` | Test backend; publish its executable jar (GitHub Packages). |
+| `sharepoint-batch.yaml` | Test the batch service; publish its native-image container (GHCR) and executable jar (GitHub Packages). |
 | `frontend-package.yaml` | Publish the offline frontend bundle as the `frontend-latest` release asset. |
-| `deploy-cf.yaml` | `cf push` all apps, gated by a `production` environment approval. |
+| `deploy-cf.yaml` | Build the backend jar, then `cf push` all apps, gated by a `production` environment approval. |
 
 ## Further reading
 

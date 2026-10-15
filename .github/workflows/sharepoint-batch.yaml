@@ -5,8 +5,7 @@ on:
     branches: [ main ]
     # ingestion-core is included since sharepoint-batch depends on it (see
     # sharepoint-batch/build.gradle) - a library-only change still needs a rebuilt image even
-    # though nothing under sharepoint-batch/ itself changed. Mirrors native-image.yaml's same
-    # rationale for backend.
+    # though nothing under sharepoint-batch/ itself changed. Same rationale as backend.yaml's.
     paths:
       - 'sharepoint-batch/**'
       - 'ingestion-core/**'
@@ -37,10 +36,10 @@ jobs:
     name: Build and publish native image
     needs: test
     runs-on: ubuntu-latest
-    # Native image now (see sharepoint-batch/build.gradle's bootBuildImage comment for why) -
-    # mirrors native-image.yaml's timeout budget for backend's own native-image build, since this
-    # app pulls in the same Tika/POI/XMLBeans reflection surface via ingestion-core and needs the
-    # same points-to-analysis memory/time tradeoffs (-H:NumberOfThreads=1, see build.gradle).
+    # Still a native image (see sharepoint-batch/build.gradle's bootBuildImage comment for why).
+    # backend used to share this long budget but is a plain jar now; this app still pulls in the
+    # Tika/POI/XMLBeans reflection surface via ingestion-core and needs the same points-to-analysis
+    # memory/time tradeoffs (-H:NumberOfThreads=1, see build.gradle).
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -102,5 +101,5 @@ jobs:
         # constraint documented on the native-image job is specific to native images, where using
         # the AOT initializer isn't optional. This jar still resolves app.ingestion.source
         # dynamically from the environment at actual startup.
-        # --no-configuration-cache: see native-image.yaml's publish-jar job for why.
+        # --no-configuration-cache: see backend.yaml's publish-jar job for why.
         run: ./gradlew :sharepoint-batch:publish --no-configuration-cache

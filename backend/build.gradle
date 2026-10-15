@@ -4,7 +4,6 @@ plugins {
 	id 'org.springframework.boot' version '4.1.1'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'jacoco'
-	id 'org.graalvm.buildtools.native' version '1.1.10'
 }
 
 group = 'com.example'
@@ -55,7 +54,7 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-vector-store-advisor'
 
-	// Cloud Foundry service binding support (spike): java-cfenv-boot sets spring.datasource.* from
+	// Cloud Foundry service binding support: java-cfenv-boot sets spring.datasource.* from
 	// the bound Postgres service in VCAP_SERVICES; the tanzu-genai module registers a GenaiLocator
 	// (genai.locator.*) that lists the models the bound ai-models instance grants, so models are
 	// chosen by name at startup instead of passing the proxy URL/API key through vars.yml. Both are
@@ -128,11 +127,11 @@ jacocoTestReport {
 	}
 }
 
-// Publishes the executable ("fat") jar bootJar produces to GitHub Packages' Maven registry,
-// alongside (not instead of) the GraalVM native-image container bootBuildImage publishes to GHCR
-// below - a plain-JVM artifact for anyone running this outside the native-image/CF path. Reuses
-// the same GITHUB_TOKEN (packages:write, already granted in native-image.yaml) rather than a new
-// secret - GitHub Packages Maven auth is username=actor/password=token, the standard pattern.
+// Publishes the executable ("fat") jar bootJar produces to GitHub Packages' Maven registry. This
+// jar is what gets deployed to Cloud Foundry (java_buildpack, see manifest.yml) and what an
+// offline client downloads (see manifest-offline.yml). Reuses the workflow's GITHUB_TOKEN
+// (packages:write, granted in backend.yaml) rather than a new secret - GitHub Packages Maven auth
+// is username=actor/password=token, the standard pattern.
 publishing {
 	repositories {
 		maven {
@@ -150,54 +149,4 @@ publishing {
 			artifactId = 'client-rag-demo-backend'
 		}
 	}
-}
-
-// Spring AOT evaluates @ConditionalOnProperty and profile-specific properties once, at build
-// time, and bakes the result into the native image. There is no VCAP_SERVICES at build time, so
-// without these the GenaiLocator (java-cfenv-boot-tanzu-genai) and GenaiModelConfiguration would
-// be excluded from the image entirely, and the `cloud` profile's spring.ai.model.*=none switches
-// wouldn't apply. The placeholder URL is never used - at runtime java-cfenv sets the real value
-// from the bound service and the bean reads it from the Environment then.
-tasks.named('processAot') {
-	args('--spring.profiles.active=cloud', '--genai.locator.config-url=set-at-runtime-from-vcap-services')
-}
-
-tasks.named('bootBuildImage') {
-	imageName = "ghcr.io/dmfrey/client-rag-demo:${project.version}"
-	// Paketo's native-image builder (Linux-based, unlike a locally-invoked native-image binary)
-	// is also how the CI workflow builds the published image - building it locally the same way
-	// exercises the exact same path this app will actually run under in production.
-	environment = [
-		'BP_NATIVE_IMAGE': 'true',
-		// GraalVM only bundles a minimal charset set by default (no CP1252/Windows-1252) - Apache
-		// POI's LocaleUtil has a static initializer that loads CP1252 unconditionally to parse any
-		// OOXML file (DOCX/XLSX/PPTX), with no fallback/catch around it (unlike PDFBox's own
-		// Windows-1252 lookup elsewhere, which does catch and fall back) - so an uncaught
-		// ExceptionInInitializerError there doesn't just fail one document, it permanently breaks
-		// LocaleUtil (and therefore every DOCX upload) for the running instance's whole lifetime,
-		// discovered only by a real .docx upload in production. -H:+AddAllCharsets is the current,
-		// non-deprecated flag (confirmed via `native-image --expert-options-all`) for including
-		// every hosted charset rather than registering CP1252 alone and re-discovering the next
-		// missing one whenever some other document's encoding differs.
-		// Apache XMLBeans (used by POI's XWPF/Word parsing specifically - the class chain is
-		// XWPFDocument -> POIXMLDocument.load -> an XMLBeans-generated schema class's <clinit> ->
-		// its regex engine's locale setup) loads a ResourceBundle of error-message strings that
-		// GraalVM doesn't include by default either - a genuinely different native-image gap from
-		// the charset one above (ResourceBundle inclusion, not Charset provider inclusion),
-		// discovered only by a real .docx upload crashing with MissingResourceException. Only this
-		// one exact bundle is registered since it's the only one actually observed failing - add
-		// more here (comma-separated per -H:IncludeResourceBundles) if another one surfaces.
-		// -H:NumberOfThreads=1: the registered reflection surface across OpenAiRuntimeHints
-		// (the whole com.openai.models package) and PoiRuntimeHints/XmlBeansRuntimeHints (POI's
-		// wordprocessingml/drawingml.main + XMLBeans' own built-in schema systems) has grown large
-		// enough that native-image's points-to analysis now needs more peak memory than the
-		// standard GitHub Actions runner's ~12.7GB allocation - a real CI run failed twice in a
-		// row asking for "more than 14.24GB", not a code bug. Analysis parallelizes across
-		// threads, and each thread holds its own working set, so forcing single-threaded analysis
-		// trades build time (still within the workflow's 60-minute budget) for materially lower
-		// peak memory - the standard mitigation for this exact GraalVM symptom on memory-
-		// constrained CI, tried before reaching for the riskier option of narrowing an
-		// already-fixed reflection gap and potentially reintroducing the bug it fixed.
-		'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1',
-	]
 }

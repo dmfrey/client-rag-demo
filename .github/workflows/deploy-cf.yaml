@@ -4,7 +4,7 @@ name: Deploy to Cloud Foundry
 # `environment: production` gate below (a required-reviewer protection rule, configured on this
 # repo's "production" GitHub Environment) pauses the job before it does anything, waiting for a
 # human to click Approve in the Actions UI. That approval click is the actual safety gate: by the
-# time you approve, you've had a chance to confirm native-image.yaml and sharepoint-batch.yaml
+# time you approve, you've had a chance to confirm backend.yaml and sharepoint-batch.yaml
 # both finished green, and the job doesn't proceed without an explicit human decision either way.
 # workflow_dispatch is also here for an ad-hoc redeploy of the current main without a new push
 # (e.g. after a config-only change like a manifest.yml env var, which doesn't trigger either build
@@ -31,12 +31,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The backend is pushed as a plain executable jar (java_buildpack, see manifest.yml), built
+      # right here so the pushed jar always matches the commit being deployed.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Build backend jar
+        run: ./gradlew :backend:bootJar
+
       # Reuses frontend-package.yaml's published artifact rather than building from source a
       # second, separate way - guarantees this deploy ships the exact same bundle a client
       # deploying offline would get, and drops the Node/npm setup entirely from this job. That
       # release is rebuilt on every frontend/** push (see frontend-package.yaml) - by the time a
       # human approves this job's environment gate, it's had time to publish the current build,
-      # the same reasoning the gate already relies on for the native-image workflows finishing.
+      # the same reasoning the gate already relies on for the build workflows finishing.
       # The bundle ships with a placeholder in place of a real backend URL (see
       # frontend-package.yaml's own comment for why); this sed swap is the same one documented in
       # that release's own notes for a client deploying it themselves.
@@ -72,6 +82,11 @@ jobs:
           cf auth "$CF_USERNAME" "$CF_PASSWORD"
           cf target -o "$CF_ORG" -s "$CF_SPACE"
 
+      # Only sharepoint-batch still takes its credentials this way - the backend reads its Postgres
+      # and model-proxy credentials straight from its service bindings (java-cfenv, see
+      # manifest.yml), so none of the values below reach it. Drop this step once sharepoint-batch
+      # does the same.
+      #
       # Reads the same client-rag-demo-db-key/client-rag-demo-ai-key service keys the manifest.yml
       # header comment already documents for the manual local workflow, rather than duplicating
       # these values as separate GitHub secrets - CF stays the single source of truth, and CI only

@@ -1,0 +1,58 @@
+name: Build and Publish Backend
+
+on:
+  push:
+    branches: [ main ]
+    # Only backend changes (or changes to this workflow itself) need a rebuild. ingestion-core is
+    # included too - backend depends on it (see backend/build.gradle), so a library-only change
+    # there still needs a rebuilt backend jar even though nothing under backend/ itself changed.
+    paths:
+      - 'backend/**'
+      - 'ingestion-core/**'
+      - '.github/workflows/backend.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Needed to publish the jar to this repo's GitHub Packages Maven registry.
+  packages: write
+
+jobs:
+  test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Run backend and ingestion-core tests
+        run: ./gradlew :backend:test :ingestion-core:test
+
+  publish-jar:
+    name: Publish executable jar to GitHub Packages
+    # The jar is the deployable artifact: deploy-cf.yaml builds the same bootJar to cf push, and
+    # an offline client downloads this published one (see manifest-offline.yml).
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Publish jar
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --no-configuration-cache: maven-publish's GenerateMavenPom task can't serialize into the
+        # configuration cache this project otherwise uses by default (Configuration/Project/
+        # DependencyHandler aren't cache-safe types, per Gradle's own requirements doc) - confirmed
+        # locally, the task itself succeeds and produces a correct POM either way, only the cache
+        # write fails and turns that into a false BUILD FAILED.
+        run: ./gradlew :backend:publish --no-configuration-cache
