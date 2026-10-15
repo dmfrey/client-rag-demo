@@ -1,8 +1,14 @@
-# Site-specific values for manifest.yml. Copy this file to vars.yml and edit it for your foundation.
-# No credentials live here - the apps read Postgres and their model endpoints from their service
-# bindings - so vars.yml is safe to keep alongside the jars. ./preflight.sh checks it all before you
-# push: every variable the manifest uses has a value, the files exist, the buildpacks and services
-# exist on the foundation you are targeting, and the routes sit on a domain it actually has.
+# Site-specific values for manifest.yml (and manifest-batch.yml). Copy this file to vars.yml and edit
+# it for your foundation. No credentials live here - the apps read Postgres and their model
+# endpoints from their service bindings - so vars.yml is safe to keep alongside the jars.
+# ./preflight.sh checks it all before you push: every variable the manifests use has a value, the
+# files exist, the buildpacks and services exist on the foundation you are targeting, and the
+# routes sit on a domain it actually has.
+
+# --- Optional batch job. The SharePoint/filesystem ingestion job (sharepoint-batch) is not deployed
+# --- unless this is true (or you run ./deploy.sh --with-batch). The variables in the "batch job"
+# --- section below are only needed, and only checked, when it is.
+deploy-batch: false
 
 # --- Routes (fully-qualified hostnames, no scheme). The frontend is built to call the backend at
 # --- https://<backend-route>, and the backend's CORS origin is https://<frontend-route>; both come
@@ -13,7 +19,6 @@ frontend-route: client-rag-demo-frontend.apps.example.com
 # --- Files, relative to this folder. GitHub Packages names SNAPSHOT jars with a timestamp
 # --- (e.g. client-rag-demo-backend-0.0.1-20261015.171059-2.jar) - use the name you downloaded.
 backend-jar: ./client-rag-demo-backend-0.0.1-SNAPSHOT.jar
-batch-jar: ./client-rag-demo-sharepoint-batch-0.0.1-SNAPSHOT.jar
 frontend-dir: ./frontend-dist
 
 # --- Buildpacks (`cf buildpacks`). The Java one must bundle a Java 25 JRE.
@@ -28,17 +33,21 @@ staticfile-buildpack: staticfile_buildpack
 db-service: client-rag-demo-db
 chat-service: client-rag-demo-chat
 embed-service: client-rag-demo-embed
-# Only used when ingestion-source is filesystem (a block-storage / NFS-style volume).
-volume-service: rag-docs-volume
 
-# --- sharepoint-batch input: filesystem (a mounted directory) or graph (Microsoft Graph).
-# --- graph needs tenant/site/drive settings this template does not cover - see README.md.
-ingestion-source: filesystem
-
-# --- Tuning. chunk-size is shared by the backend and the batch app (they write into the same
-# --- vector store). 128 suits an embedding model with a 512-token limit; lower it if documents
-# --- fail to embed with a "too many tokens" error. Memory suits the JVM apps' document parsing.
+# --- Tuning. chunk-size is shared by the backend and the batch job (they write into the same vector
+# --- store). 128 suits an embedding model with a 512-token limit; lower it if documents fail to
+# --- embed with a "too many tokens" error. Memory suits the JVM apps' document parsing.
 chunk-size: "128"
 backend-memory: 1500M
-batch-memory: 1500M
 startup-timeout: 180
+
+# ======================================================================================
+# --- Batch job (manifest-batch.yml): only used when deploy-batch is true / --with-batch.
+# ======================================================================================
+batch-jar: ./client-rag-demo-sharepoint-batch-0.0.1-SNAPSHOT.jar
+batch-memory: 1500M
+# filesystem (a mounted directory) or graph (Microsoft Graph). graph needs extra settings - see
+# README.md.
+ingestion-source: filesystem
+# Only used when ingestion-source is filesystem (a block-storage / NFS-style volume).
+volume-service: rag-docs-volume

@@ -2,18 +2,20 @@
 
 Deploys the whole application (backend, frontend, SharePoint/filesystem batch job) to a Cloud
 Foundry foundation with **no access to GHCR, npm or Maven Central**: the apps are pushed from
-files you carry in, not pulled as images or built onsite.
+files you carry in, not pulled as images or built onsite. The core application (backend + frontend)
+is always deployed; the SharePoint/filesystem **batch job is optional** and off by default.
 
 This folder is self-contained - copy it onsite, drop the jars and the frontend bundle next to it,
 fill in `vars.yml`, and run `./deploy.sh`.
 
 | File | What it is |
 |---|---|
-| `manifest.yml` | The CF manifest. Everything that differs between sites is a `((variable))`. |
+| `manifest.yml` | The CF manifest for the core application: backend + frontend. Everything that differs between sites is a `((variable))`. |
+| `manifest-batch.yml` | The optional batch job (`sharepoint-batch`). Pushed only when you ask for it. |
 | `vars.yml.example` | The variables, with comments. Copy to `vars.yml` and edit. |
 | `preflight.sh` | Checks vars, files, buildpacks, services and route domains before you push (read-only). |
 | `prepare-frontend.sh` | Extracts the frontend bundle and points it at your backend route. |
-| `deploy.sh` | `prepare-frontend.sh` + `preflight.sh` + `cf push`, in one command. |
+| `deploy.sh` | `prepare-frontend.sh` + `preflight.sh` + `cf push`, in one command. `--with-batch` / `--without-batch` / `--dry-run`. |
 | `lib.sh` | Helpers the scripts share. |
 
 The scripts need only `bash`, `sed`, `grep`, `awk` and the `cf` CLI (logged in and targeting the
@@ -24,7 +26,7 @@ org/space you are deploying to).
 | Artifact | Where to get it |
 |---|---|
 | `client-rag-demo-backend-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-backend` |
-| `client-rag-demo-sharepoint-batch-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-sharepoint-batch` |
+| `client-rag-demo-sharepoint-batch-<version>.jar` | *Only if you deploy the batch job.* GitHub Packages (Maven): `com.example:client-rag-demo-sharepoint-batch` |
 | `frontend-dist.tar.gz` | GitHub Release `frontend-latest` |
 | this `offline/` folder | the repo |
 
@@ -49,8 +51,8 @@ Packages are SNAPSHOTs, so file names carry a timestamp, for example
   Each binding must expose `credentials.endpoint` with `config_url`, `api_key` and `api_base`
   (the Tanzu `ai-models` offering does). A service on an all-models plan is rejected at startup as
   ambiguous unless `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL` name the model.
-- **A volume service** (block-storage / NFS-style) holding the documents, if `ingestion-source` is
-  `filesystem`.
+- **Only if you deploy the batch job:** a **volume service** (block-storage / NFS-style) holding the
+  documents, if `ingestion-source` is `filesystem`.
 
 There are no service keys to create and no credentials to configure: both Java apps read Postgres
 and their model endpoint(s) from their service bindings (`VCAP_SERVICES`) themselves.
@@ -72,16 +74,19 @@ $EDITOR vars.yml
 |---|---|---|
 | `backend-route` | Backend hostname (no scheme), on a domain from `cf domains` | the frontend's API URL (`prepare-frontend.sh`) |
 | `frontend-route` | Frontend hostname | the backend's CORS origin (`https://<frontend-route>`) |
-| `backend-jar`, `batch-jar` | The downloaded jar file names | |
+| `backend-jar` | The downloaded backend jar file name | |
+| `batch-jar` | *(batch job only)* the downloaded batch jar file name | |
 | `frontend-dir` | Where the frontend bundle is extracted (`./frontend-dist`) | |
 | `java-buildpack`, `staticfile-buildpack` | Buildpack names from `cf buildpacks` | |
-| `db-service` | PostgreSQL service instance name | the binding on both Java apps |
+| `deploy-batch` | `true` to deploy the optional batch job, `false` (the default) to leave it out | `./deploy.sh --with-batch` / `--without-batch` override it |
+| `db-service` | PostgreSQL service instance name | the binding on the Java apps |
 | `chat-service` | Chat GenAI service name | the binding **and** the backend's lookup of it |
-| `embed-service` | Embedding GenAI service name | the binding **and** both apps' lookup of it |
-| `volume-service` | Volume service name (filesystem source only) | the binding **and** the batch app's mount-path lookup |
-| `ingestion-source` | `filesystem` or `graph` | |
-| `chunk-size` | Document chunk size in tokens, shared by backend and batch (`128` suits an embedding model with a 512-token limit; lower it if documents fail to embed with a "too many tokens" error) | |
-| `backend-memory`, `batch-memory` | JVM apps' memory (`1500M`) | |
+| `embed-service` | Embedding GenAI service name | the binding **and** the lookup, in the backend and the batch job |
+| `volume-service` | *(batch job, filesystem source only)* volume service name | the binding **and** the batch app's mount-path lookup |
+| `ingestion-source` | *(batch job only)* `filesystem` or `graph` | |
+| `chunk-size` | Document chunk size in tokens, shared by the backend and the batch job (`128` suits an embedding model with a 512-token limit; lower it if documents fail to embed with a "too many tokens" error) | |
+| `backend-memory` | Backend memory (`1500M`) | |
+| `batch-memory` | *(batch job only)* batch memory (`1500M`) | |
 | `startup-timeout` | Seconds CF waits for the backend to become healthy (`180`; a JVM start with database migrations is slow) | |
 
 Values that must agree are driven by **one** variable each (the route and the CORS origin; a
@@ -93,7 +98,7 @@ from its own `VCAP_SERVICES`.
 ### SharePoint (Microsoft Graph) instead of a volume
 
 Set `ingestion-source: graph`, then uncomment the five `APP_SHAREPOINT_*` lines in the batch app's
-`env:` in `manifest.yml` and add the matching `sharepoint-*` variables to `vars.yml`. The client
+`env:` in `manifest-batch.yml` and add the matching `sharepoint-*` variables to `vars.yml`. The client
 secret then lives in `vars.yml` - keep it out of version control. (Not yet verified against a real
 tenant.)
 
@@ -110,11 +115,28 @@ Or step by step: `./prepare-frontend.sh frontend-dist.tar.gz`, then `./preflight
 `preflight.sh` stops you with a clear `FAIL` line for: a variable with no value or a leftover
 `example.com`; a missing jar; a frontend still carrying the placeholder; a buildpack, service or
 route domain that does not exist on the foundation you are targeting. It only reads from CF.
+If a different `cf` CLI version prints something the script misreads and it fails a check that is
+actually fine, `SKIP_FOUNDATION=1 ./preflight.sh` (or `SKIP_FOUNDATION=1 ./deploy.sh`) skips just the
+checks that read from CF; the variable and file checks still run.
 
-The apps are pushed in manifest order, backend first. **Let the backend start before running the
-batch job**: it runs the database migrations, and `sharepoint-batch` must never run against a
-database the backend has not migrated at least once. Then trigger ingestion on demand or from an
-external scheduler:
+### The optional batch job
+
+The batch job is **not deployed by default**. Core-only sites need none of its jar, its variables
+or its volume service, and `preflight.sh` does not check for them. To include it:
+
+```bash
+./deploy.sh --with-batch              # just this once, or
+# deploy-batch: true in vars.yml        # every time
+```
+
+`--without-batch` overrides `deploy-batch: true`; `--dry-run` does everything except the `cf push`
+and prints what would be pushed. Adding the job to an already-deployed site later is the same
+command: `./deploy.sh --with-batch` re-pushes the core application (harmlessly) and then the job.
+
+The core application is pushed first and the batch job only afterwards, so the backend has started
+and run the database migrations before the job exists: `sharepoint-batch` must never run against a
+database the backend has not migrated at least once. Once deployed, trigger ingestion on demand or
+from an external scheduler:
 
 ```bash
 cf run-task client-rag-demo-sharepoint-batch

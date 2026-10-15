@@ -1,22 +1,28 @@
-# OFFLINE variant of ../manifest.yml: deploys the backend and sharepoint-batch as plain executable
-# jars (Java buildpack) instead of pulling Docker images from GHCR, and the frontend from its
-# pre-built bundle. For a CF foundation/network with no access to ghcr.io or npm.
+# OFFLINE variant of ../manifest.yml: deploys the backend as a plain executable jar (Java
+# buildpack) instead of pulling a Docker image from GHCR, and the frontend from its pre-built
+# bundle. For a CF foundation/network with no access to ghcr.io or npm.
+#
+# This file holds the core application: the backend and the frontend. The SharePoint/filesystem
+# batch job is OPTIONAL and lives in manifest-batch.yml, pushed only when you ask for it
+# (deploy-batch in vars.yml, or ./deploy.sh --with-batch) - so a site that does not run the batch
+# job needs none of its jars, services or variables.
 #
 # Everything that differs from site to site is a CF manifest variable filled in from vars.yml (copy
-# vars.yml.example and edit it) - nothing in this file needs hand-editing onsite. Variables that
+# vars.yml.example and edit it) - nothing in these files needs hand-editing onsite. Variables that
 # must agree with each other (the frontend route and the backend's CORS origin; a service's name in
 # `services:` and the setting the app uses to find it) are driven by ONE variable each, so they
 # cannot drift apart.
 #
 # Folder layout (this whole offline/ folder is what you carry onsite):
 #
-#   manifest.yml            this file
+#   manifest.yml            this file: backend + frontend
+#   manifest-batch.yml      the optional batch job (sharepoint-batch)
 #   vars.yml                your site's values (from vars.yml.example)
 #   preflight.sh            checks vars, files, buildpacks, services and routes before pushing
 #   prepare-frontend.sh     points the pre-built frontend bundle at your backend route
 #   deploy.sh               preflight + prepare-frontend + cf push, in one go
 #   <backend jar>           GitHub Packages: com.example:client-rag-demo-backend
-#   <batch jar>             GitHub Packages: com.example:client-rag-demo-sharepoint-batch
+#   <batch jar>             (only with the batch job) com.example:client-rag-demo-sharepoint-batch
 #   frontend-dist.tar.gz    GitHub Release frontend-latest (extracted into ./frontend-dist)
 #
 # Then, from this folder:  ./deploy.sh frontend-dist.tar.gz     (or step by step - see README.md)
@@ -110,70 +116,3 @@ applications:
     instances: 1
     routes:
       - route: ((frontend-route))
-
-  - name: client-rag-demo-sharepoint-batch
-    # A Spring Cloud Task app (see SharepointBatchApplication's @EnableTask/CLAUDE.md) - runs
-    # sharePointSyncJob once to completion and exits, rather than staying up as a long-lived
-    # process. `cf push` here only STAGES the droplet (instances: 0 - it's never actually
-    # started as a running app); the job itself is triggered on demand or on a schedule via:
-    #   cf run-task client-rag-demo-sharepoint-batch
-    # (an external scheduler - e.g. Scheduler for VMware Tanzu, or plain cron calling `cf
-    # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
-    # its earlier @Scheduled-based design).
-    #
-    # Plain executable jar via the Java buildpack (no Docker/GHCR access offline).
-    path: ((batch-jar))
-    buildpacks:
-      - ((java-buildpack))
-    # Used by `cf run-task` too (a task defaults to the app's memory). Document parsing (Tika/POI/
-    # PDFBox) on a JVM wants headroom - same size as the backend.
-    memory: ((batch-memory))
-    # Never started as a long-running process - see the note above. `cf run-task` uses the
-    # staged droplet directly regardless of this app's own "started"/"stopped" state.
-    instances: 0
-    no-route: true
-    env:
-      # Activates application-cloud.yaml: the embedding model comes from the bound
-      # client-rag-demo-embed service (ingestion-core's GenaiBindingsConfiguration), and Postgres
-      # from client-rag-demo-db (java-cfenv-boot, bundled in the jar) - no vars.yml involved. This
-      # app only embeds documents (no chat), so it is bound to the embedding service alone. If that
-      # service is named differently, set APP_GENAI_EMBEDDING_SERVICE; an all-models plan is
-      # rejected as ambiguous at startup unless APP_GENAI_EMBEDDING_MODEL names the model. At
-      # startup the model's dimension is also checked against vector_store.embedding (768, fixed by
-      # the Liquibase schema backend runs) and a mismatch stops the task before it ingests anything.
-      SPRING_PROFILES_ACTIVE: cloud
-      # The buildpack would otherwise add its own copy of java-cfenv-boot next to the one in the
-      # jar and activate a `cloud` profile of its own - disabled so there's exactly one. (It also
-      # broke @EnableJdbcRepositories outright on the first java_buildpack deploy - see CLAUDE.md.)
-      JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
-      # The jar targets Java 25.
-      JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
-      # Same ((chunk-size)) variable as the backend's - the two apps write into the same vector_store
-      # against the same embedding model, so they must always agree.
-      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "((chunk-size))"
-      # Real SharePoint/Graph credentials aren't available yet (see CLAUDE.md) - this deployment
-      # exercises the pipeline against a mounted rag-docs-volume (block-storage, bound below)
-      # instead, standing in for a real SharePoint drive per the client's own suggestion that an
-      # NFS-style mount might substitute for SharePoint in some environments. A plain JVM jar picks
-      # the source at runtime from this variable (the old native image baked it in at build time).
-      APP_INGESTION_SOURCE: ((ingestion-source))
-      # Only for ingestion-source: graph (Microsoft Graph / SharePoint). Uncomment these, add the
-      # five variables to vars.yml, and note that the client secret then lives in vars.yml - keep
-      # that file out of version control and off shared drives.
-      # APP_SHAREPOINT_TENANT_ID: ((sharepoint-tenant-id))
-      # APP_SHAREPOINT_CLIENT_ID: ((sharepoint-client-id))
-      # APP_SHAREPOINT_CLIENT_SECRET: ((sharepoint-client-secret))
-      # APP_SHAREPOINT_SITE_ID: ((sharepoint-site-id))
-      # APP_SHAREPOINT_DRIVE_ID: ((sharepoint-drive-id))
-      # The volume's mount path (rag-docs-volume, bound below) needs no setting here: CF assigns a
-      # GUID-based container path per binding that is only knowable after binding, so the app reads
-      # it from its own VCAP_SERVICES (<service>.volume_mounts[].container_dir) at startup -
-      # FilesystemVolumeEnvironmentPostProcessor. APP_FILESYSTEM_SOURCE_PATH, if you set it,
-      # overrides that. The binding to read is named by the same ((volume-service)) variable as
-      # services: below. Likewise the embedding service this app looks up is ((embed-service)).
-      APP_FILESYSTEM_SOURCE_VOLUME_SERVICE: ((volume-service))
-      APP_GENAI_EMBEDDING_SERVICE: ((embed-service))
-    services:
-      - ((db-service))
-      - ((embed-service))
-      - ((volume-service))

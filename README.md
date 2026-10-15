@@ -107,8 +107,10 @@ cp vars.yml.example vars.yml && $EDITOR vars.yml   # routes, jar names, buildpac
 ./deploy.sh frontend-dist.tar.gz                   # prepares the frontend, runs checks, cf push
 ```
 
-Everything that differs between sites is a `((variable))` in `offline/manifest.yml`, set in
-`vars.yml`; values that must agree (the frontend route and the backend's CORS origin; a service's
+The SharePoint/filesystem batch job is optional and off by default (`deploy-batch` in `vars.yml`, or
+`./deploy.sh --with-batch`); core-only sites need none of its jar, variables or volume service.
+Everything that differs between sites is a `((variable))` in `offline/manifest.yml` (and
+`manifest-batch.yml`), set in `vars.yml`; values that must agree (the frontend route and the backend's CORS origin; a service's
 name and the app's lookup of it) are driven by one variable each. `offline/preflight.sh` checks the
 variables, files, buildpacks, services and route domains before anything is pushed. There are no
 credentials to configure - the apps read Postgres and their model endpoints from their service

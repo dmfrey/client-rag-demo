@@ -4,15 +4,54 @@
 #   ./deploy.sh frontend-dist.tar.gz    first time (extracts the frontend bundle)
 #   ./deploy.sh                         later pushes (frontend already extracted and prepared)
 #
-# The apps are pushed in manifest order - backend first. Let the backend start before anything that
-# depends on its database migrations: sharepoint-batch must never run against a database the
-# backend has not migrated at least once.
+# Options:
+#   --with-batch      also deploy the optional batch job (manifest-batch.yml)
+#   --without-batch   do not, even if deploy-batch is true in vars.yml
+#   --dry-run         do everything except the cf push, and print what would be pushed
+#
+# Without --with-batch / --without-batch, deploy-batch in vars.yml decides (false if unset).
+# If the executable bit was lost in transit, run it as `bash deploy.sh`.
+#
+# manifest.yml (backend + frontend) is pushed first. The batch job, if wanted, is pushed in a
+# second step only once that has succeeded - by then the backend is running and has migrated the
+# database, and sharepoint-batch must never run against a database the backend has not migrated
+# at least once.
 set -eu
 cd "$(dirname "$0")" || exit 1
+. ./lib.sh
 
-./prepare-frontend.sh "$@"
+bundle=""
+dry_run=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --with-batch)    export DEPLOY_BATCH=true ;;
+    --without-batch) export DEPLOY_BATCH=false ;;
+    --dry-run)       dry_run=1 ;;
+    -h|--help)       awk 'NR > 1 && /^#/ {print; next} NR > 1 {exit}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*)              echo "Unknown option: $1 (see ./deploy.sh --help)" >&2; exit 2 ;;
+    *)               bundle="$1" ;;
+  esac
+  shift
+done
+
+# Run the helpers through bash explicitly so a lost executable bit (zip, USB stick, some file shares)
+# cannot break the deploy.
+if [ -n "$bundle" ]; then bash ./prepare-frontend.sh "$bundle"; else bash ./prepare-frontend.sh; fi
 echo
-./preflight.sh
+bash ./preflight.sh
 echo
-echo "Pushing (cf push -f manifest.yml --vars-file vars.yml)..."
-cf push -f manifest.yml --vars-file vars.yml
+
+push() { # <manifest>
+  echo "cf push -f $1 --vars-file $VARS"
+  [ -n "$dry_run" ] || cf push -f "$1" --vars-file "$VARS"
+}
+
+push "$MANIFEST"
+if [ "$(want_batch)" = true ]; then
+  echo
+  push "$BATCH_MANIFEST"
+else
+  echo
+  echo "Batch job not deployed. Add it later with ./deploy.sh --with-batch (or set deploy-batch: true)."
+fi
+[ -z "$dry_run" ] || echo "(dry run: nothing was pushed)"
