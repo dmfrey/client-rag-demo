@@ -1,21 +1,18 @@
 // Spring Cloud Task application (see SharepointBatchApplication's @EnableTask) - polls a
-// SharePoint document library via Microsoft Graph and (re-)ingests changed files through
+// SharePoint document library (or a mounted filesystem) and (re-)ingests changed files through
 // ingestion-core, then exits. Deployed as a Cloud Foundry Task (`cf run-task`, triggered
 // periodically by an external scheduler - see manifest.yml), not a long-running app: no web
 // server/actuator (see the dependency list below - deliberately no webmvc/actuator), no internal
-// @Scheduled loop. Built as a GraalVM native image (see the bootBuildImage task below) - this was
-// originally a plain JVM image specifically to avoid inheriting backend's native-image reflection
-// fights for no benefit to a short-lived task's startup latency, but CF's java_buildpack staging
-// path this app used for the plain-JVM deploy started reproducibly OOM-killing itself during the
-// JRE-expansion step (Exit status 137, reproduced on three separate cells, no platform-side
-// resolution timeline) - switching to a native image sidesteps that buildpack path entirely by
-// deploying via `docker: image:` instead (same as backend).
+// @Scheduled loop. Deployed as a plain executable jar (java_buildpack), reading its Postgres and
+// embedding-service credentials from its CF service bindings via java-cfenv (through
+// ingestion-core). It was a GraalVM native image for a while, to dodge java_buildpack staging
+// OOMs, but java-cfenv's VCAP_SERVICES parsing (json-io) is not native-image friendly - see
+// CLAUDE.md's GraalVM section.
 plugins {
     id 'java'
     id 'maven-publish'
     id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
-    id 'org.graalvm.buildtools.native' version '1.1.10'
 }
 
 group = 'com.example'
@@ -73,15 +70,6 @@ dependencies {
     // Database dependencies
     implementation 'org.postgresql:postgresql'
 
-    // org.eclipse.angus:angus-activation (pulled in transitively via jaxb-core, used by Tika/POI
-    // for XML/OOXML parsing via ingestion-core, nothing to do with email) registers a
-    // native-image Feature that unconditionally references jakarta.mail.Part - without that class
-    // on the classpath, native-image generation itself fails with NoClassDefFoundError even
-    // though this app never sends or parses email. Just the API is needed to satisfy the class
-    // lookup; no implementation/runtime mail functionality is used. Same gap backend's own
-    // build.gradle already documents/fixes - see its comment there for the full story.
-    runtimeOnly 'jakarta.mail:jakarta.mail-api:2.1.3'
-
     // SharePoint dependencies
     // Microsoft Graph Java SDK - the actual client for listing/downloading SharePoint drive
     // items and running delta queries (see sharepoint/adapter/out/graph/). No GraphQL client
@@ -119,8 +107,8 @@ tasks.named('test') {
 }
 
 // Same rationale as backend/build.gradle's own publishing {} block - publishes the executable jar
-// to GitHub Packages alongside the native-image container, for anyone running this outside the
-// CF/native-image path.
+// to GitHub Packages. This jar is what gets deployed to Cloud Foundry (java_buildpack, see
+// manifest.yml) and what an offline client downloads (see manifest-offline.yml).
 publishing {
     repositories {
         maven {
@@ -138,47 +126,4 @@ publishing {
             artifactId = 'client-rag-demo-sharepoint-batch'
         }
     }
-}
-
-tasks.named('bootBuildImage') {
-    // Separate image name from backend's (ghcr.io/dmfrey/client-rag-demo) - these are two
-    // independently deployed apps sharing one repo, not one app.
-    imageName = "ghcr.io/dmfrey/client-rag-demo-sharepoint-batch:${project.version}"
-    // Switched to a native image (was a plain JVM image - see git history for the original
-    // rationale against it) after CF's java_buildpack staging repeatedly OOM'd on this app's
-    // deploy path (Exit status 137 during the JRE-expansion step, reproduced on three different
-    // cells) with no clear resolution timeline from the platform team. A native image sidesteps
-    // that staging pipeline entirely - it deploys via `docker: image:` (see manifest.yml), the
-    // same path backend already uses successfully. Mirrors backend/build.gradle's own
-    // BP_NATIVE_IMAGE args - this app pulls in the same Tika/PDFBox/POI/XMLBeans reflection
-    // surface via ingestion-core, so it needs the same charset/resource-bundle/thread-count
-    // mitigations backend already found necessary (see that file's comment for the full story
-    // behind each one).
-    environment = [
-            'BP_NATIVE_IMAGE': 'true',
-            // --initialize-at-build-time=<packages>: a real CI run failed with "An object of type
-            // 'org.slf4j.helpers.SubstituteServiceProvider' was found in the image heap. This
-            // type, however, is marked for initialization at image run time" - something in this
-            // app's specific dependency mix (spring-cloud-task/spring-batch/microsoft-graph,
-            // absent from backend's classpath) touches SLF4J 2.x's ServiceLoader-based provider
-            // resolution during the build-time analysis phase anyway, a class-initialization
-            // ordering conflict, not a missing-registration gap (backend never hit this with the
-            // same charset/resource-bundle/thread-count args above). Fixing individual classes one
-            // CI attempt at a time (SubstituteServiceProvider, then NOP_FallbackServiceProvider,
-            // then ch.qos.logback.classic.spi.LogbackServiceProvider, then
-            // org.slf4j.helpers.SubstituteLoggerFactory) kept surfacing the next class in the same
-            // family, so this widened to whole-package (org.slf4j, ch.qos.logback.classic.spi) -
-            // which still wasn't enough: ch.qos.logback.classic.LoggerContext (a sibling package,
-            // ch.qos.logback.classic itself rather than its .spi subpackage) hit the identical
-            // conflict on the very next attempt. Widened once more to the whole ch.qos.logback
-            // package rather than continuing to enumerate subpackages one at a time.
-            // com.fasterxml.jackson.core.Base64Variant (plus its nested PaddingReadBehaviour enum -
-            // a class-name override doesn't cover a class's own nested types) hit the identical
-            // conflict for an unrelated reason (Jackson's constant table, not SLF4J), fixed the
-            // same way. Forcing all of these to build-time init is safe: none of them do I/O or
-            // hold non-deterministic state, they're exactly the kind of class GraalVM's own docs
-            // recommend overriding to build-time when a run-time-marked class turns out to already
-            // be touched at build time.
-            'BP_NATIVE_IMAGE_BUILD_ARGUMENTS': '-H:+AddAllCharsets -H:IncludeResourceBundles=org.apache.xmlbeans.impl.regex.message -H:NumberOfThreads=1 --initialize-at-build-time=org.slf4j,ch.qos.logback,com.fasterxml.jackson.core.Base64Variant,com.fasterxml.jackson.core.Base64Variant$PaddingReadBehaviour',
-    ]
 }

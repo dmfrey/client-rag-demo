@@ -37,6 +37,7 @@ tasks.withType(JavaCompile).configureEach {
 
 ext {
     set('springAiVersion', "2.0.1")
+    set('cfenvVersion', "4.0.2")
 }
 
 // io.spring.dependency-management (not the org.springframework.boot plugin, which would force a
@@ -73,6 +74,15 @@ dependencies {
     api 'org.springframework.ai:spring-ai-model'
     api 'org.springframework.ai:spring-ai-vector-store'
     implementation 'org.springframework.ai:spring-ai-tika-document-reader'
+
+    // Cloud Foundry service bindings, shared by backend and sharepoint-batch (see
+    // GenaiBindingsConfiguration): java-cfenv-boot-tanzu-genai provides DefaultGenaiLocator (lists
+    // the models a bound ai-models service grants), java-cfenv-boot the VCAP_SERVICES parsing and
+    // the Postgres -> spring.datasource.* mapping each app gets by having it on the classpath.
+    // Inert without VCAP_SERVICES. RestClient builds the locator's HTTP calls.
+    api "io.pivotal.cfenv:java-cfenv-boot:${cfenvVersion}"
+    api "io.pivotal.cfenv:java-cfenv-boot-tanzu-genai:${cfenvVersion}"
+    api 'org.springframework:spring-web'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jdbc'

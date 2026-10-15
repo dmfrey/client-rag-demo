@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import java.util.List;
 
@@ -8,12 +8,12 @@ import java.util.List;
 // rejected unless a model name says which one is meant, because "first available" would silently
 // depend on the catalog's ordering (and, for embeddings, could pick a model whose dimension doesn't
 // match vector_store's column).
-final class GenaiModelSelector {
+public final class GenaiModelSelector {
 
     private GenaiModelSelector() {
     }
 
-    static String select(String serviceName, String capability, List<String> available, String preferredName) {
+    public static String select(String serviceName, String capability, List<String> available, String preferredName) {
         if (preferredName != null && !preferredName.isBlank()) {
             if (!available.contains(preferredName)) {
                 throw new IllegalStateException("Service '" + serviceName + "' does not grant " + capability

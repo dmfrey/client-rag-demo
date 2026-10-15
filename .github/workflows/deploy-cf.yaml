@@ -31,15 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The backend is pushed as a plain executable jar (java_buildpack, see manifest.yml), built
-      # right here so the pushed jar always matches the commit being deployed.
+      # The backend and sharepoint-batch are pushed as plain executable jars (java_buildpack, see
+      # manifest.yml), built right here so the pushed jars always match the commit being deployed.
+      # Neither needs credentials passed in: both read Postgres and their model endpoint from their
+      # CF service bindings (java-cfenv).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
 
-      - name: Build backend jar
-        run: ./gradlew :backend:bootJar
+      - name: Build backend and sharepoint-batch jars
+        run: ./gradlew :backend:bootJar :sharepoint-batch:bootJar
 
       # Reuses frontend-package.yaml's published artifact rather than building from source a
       # second, separate way - guarantees this deploy ships the exact same bundle a client
@@ -82,56 +84,8 @@ jobs:
           cf auth "$CF_USERNAME" "$CF_PASSWORD"
           cf target -o "$CF_ORG" -s "$CF_SPACE"
 
-      # Only sharepoint-batch still takes its credentials this way - the backend reads its Postgres
-      # and GenAI credentials straight from its service bindings (java-cfenv, see manifest.yml),
-      # so none of the values below reach it. sharepoint-batch only embeds documents, so its AI
-      # credentials are the embedding service's (client-rag-demo-embed), including that service's
-      # own endpoint URL - each GenAI service has a distinct one. Drop this step once
-      # sharepoint-batch reads its bindings too.
-      #
-      # Reads the same client-rag-demo-db-key/client-rag-demo-ai-key service keys the manifest.yml
-      # header comment already documents for the manual local workflow, rather than duplicating
-      # these values as separate GitHub secrets - CF stays the single source of truth, and CI only
-      # needs the CF_USERNAME/CF_PASSWORD login above. `cf service-key` prints a "Getting key..."
-      # header line before the JSON body; `sed -n '/^{/,$p'` strips it regardless of exact wording.
-      # ::add-mask:: registers each value with the Actions runner so it's redacted from all
-      # subsequent log output, the same protection secrets.* gets automatically - required here
-      # since these values come from `cf service-key`, not the secrets context, so nothing masks
-      # them by default.
-      - name: Fetch service credentials and write vars file
-        run: |
-          cf create-service-key client-rag-demo-db client-rag-demo-db-key >/dev/null 2>&1 || true
-          cf create-service-key client-rag-demo-embed client-rag-demo-embed-key >/dev/null 2>&1 || true
-
-          DB_JSON=$(cf service-key client-rag-demo-db client-rag-demo-db-key | sed -n '/^{/,$p')
-          AI_JSON=$(cf service-key client-rag-demo-embed client-rag-demo-embed-key | sed -n '/^{/,$p')
-
-          DB_JDBC_URL=$(echo "$DB_JSON" | jq -r '.credentials.jdbcUrl')
-          DB_USERNAME=$(echo "$DB_JSON" | jq -r '.credentials.user')
-          DB_PASSWORD=$(echo "$DB_JSON" | jq -r '.credentials.password')
-          AI_API_KEY=$(echo "$AI_JSON" | jq -r '.credentials.endpoint.api_key')
-          AI_BASE_URL=$(echo "$AI_JSON" | jq -r '.credentials.endpoint.openai_api_base')
-
-          echo "::add-mask::$DB_JDBC_URL"
-          echo "::add-mask::$DB_USERNAME"
-          echo "::add-mask::$DB_PASSWORD"
-          echo "::add-mask::$AI_API_KEY"
-          echo "::add-mask::$AI_BASE_URL"
-
-          cat > vars.yml <<VARS_EOF
-          db-jdbc-url: "$DB_JDBC_URL"
-          db-username: "$DB_USERNAME"
-          db-password: "$DB_PASSWORD"
-          ai-api-key: "$AI_API_KEY"
-          ai-base-url: "$AI_BASE_URL"
-          VARS_EOF
-
       # Pushes all three apps declared in manifest.yml (backend, frontend, sharepoint-batch).
       # sharepoint-batch has instances: 0/no-route: true (see manifest.yml's own comment) - this
       # only stages its droplet, it never starts running, matching its Task-only production shape.
       - name: cf push
-        run: cf push --vars-file vars.yml
-
-      - name: Clean up vars file
-        if: always()
-        run: rm -f vars.yml
+        run: cf push

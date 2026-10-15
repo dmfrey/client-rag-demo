@@ -88,11 +88,11 @@ cd frontend && npm test
 
 ## Standard deployment (online)
 
-`manifest.yml` deploys all three apps to Cloud Foundry: the backend as an executable jar
-(`java_buildpack_offline`; `./gradlew :backend:bootJar`), the batch service from a GHCR container image
-(built by CI), the frontend via `staticfile_buildpack`. The backend needs no credentials in the
-manifest - it reads Postgres and the model proxy from its service bindings. The batch service
-still takes its credentials from `vars.yml` (copy `vars.yml.example`; never commit it). `deploy-cf.yaml` automates this behind a
+`manifest.yml` deploys all three apps to Cloud Foundry: the backend and the batch service as
+executable jars (`java_buildpack_offline`; `./gradlew :backend:bootJar :sharepoint-batch:bootJar`)
+and the frontend via `staticfile_buildpack`. Neither Java app takes credentials from the manifest:
+both read Postgres and their model endpoint from their service bindings (`java-cfenv`), so there
+is no `vars.yml` and no service key to copy. `deploy-cf.yaml` builds the jars and pushes behind a
 required-reviewer approval.
 
 ## Deploying in an offline environment
@@ -107,7 +107,7 @@ For a foundation/network with no access to GHCR, npm or Maven Central. Uses
 | `client-rag-demo-backend-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-backend` |
 | `client-rag-demo-sharepoint-batch-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-sharepoint-batch` |
 | `frontend-dist.tar.gz` | GitHub Release `frontend-latest` (asset built by `frontend-package.yaml`) |
-| `manifest-offline.yml`, `vars.yml.example` | this repo |
+| `manifest-offline.yml` | this repo |
 
 Packages are SNAPSHOTs, so file names carry a timestamp, e.g.
 `client-rag-demo-backend-0.0.1-20260825.162146-1.jar`. Either rename the files or edit the `path:`
@@ -134,14 +134,11 @@ lines in the manifest to match what you downloaded.
   offering does. Each service should grant exactly one model of its kind; a service on an
   all-models plan is rejected at startup as ambiguous unless you name the model with
   `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
-- **Backend:** bind the three services (the manifest does this) - that is all. The backend finds
-  Postgres and both model endpoints itself from `VCAP_SERVICES` (`java-cfenv`), with no service
-  keys and nothing in `vars.yml`.
-- **sharepoint-batch** (if you deploy it): still takes credentials from `vars.yml`. It only embeds
-  documents, so it is bound to the embedding service; create service keys for the database and for
-  `client-rag-demo-embed` and fill in `db-jdbc-url`, `db-username`, `db-password`, `ai-base-url`
-  (the embedding key's `credentials.endpoint.openai_api_base`) and `ai-api-key`. Each GenAI service
-  has its own endpoint URL, so the batch service's base URL is the embedding service's.
+- **Bindings, not credentials:** both Java apps find Postgres and their model endpoint(s) themselves
+  from `VCAP_SERVICES` (`java-cfenv`), so there are no service keys to create and nothing to put in a
+  variables file. The backend binds `client-rag-demo-db`, `client-rag-demo-chat` and
+  `client-rag-demo-embed`. `sharepoint-batch` only embeds documents, so it binds
+  `client-rag-demo-db`, `client-rag-demo-embed` and `rag-docs-volume` (no chat service).
 
 ### 3. Values you must change
 
@@ -152,10 +149,8 @@ Everything in `manifest-offline.yml` that is specific to the original foundation
 | Backend route `client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com` | backend `routes` | your backend FQDN |
 | Frontend route `client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com` | frontend `routes` | your frontend FQDN |
 | `APP_CORS_ALLOWED_ORIGINS` | backend env | `https://<frontend FQDN>` exactly (scheme + host, no trailing slash) |
-| `SPRING_AI_OPENAI_EMBEDDING_MODEL` | **batch env only** | the one model your embedding service grants (currently `nomic-ai/nomic-embed-text-v2-moe`). The backend has no model names - it uses whatever its two services grant |
-| `ai-base-url` / `ai-api-key` | `vars.yml` (batch only) | the embedding service key's `openai_api_base` / `api_key` |
 | `APP_DOCUMENTS_INGESTION_CHUNK_SIZE` | backend and batch env | `128` is tuned for a 512-token embedding limit; adjust to your model, keep both apps equal |
-| Service names `client-rag-demo-db`, `client-rag-demo-chat`, `client-rag-demo-embed`, `rag-docs-volume` | `services:` | your service instance names. If the chat/embedding services are named differently, also set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE` on the backend |
+| Service names `client-rag-demo-db`, `client-rag-demo-chat`, `client-rag-demo-embed`, `rag-docs-volume` | `services:` | your service instance names. If the chat/embedding services are named differently, also set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE` on the backend and `APP_GENAI_EMBEDDING_SERVICE` on `sharepoint-batch` |
 | `APP_INGESTION_SOURCE` | batch env | `filesystem` (current) or `graph` |
 | `APP_FILESYSTEM_SOURCE_PATH` | batch env | the volume mount path (see `cf env`; changes on each fresh bind) |
 | Graph settings (`APP_SHAREPOINT_TENANT_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`, `_SITE_ID`, `_DRIVE_ID`) | batch env | only if `APP_INGESTION_SOURCE=graph`; not in the manifest by default — add them |
@@ -189,14 +184,13 @@ requires both routes to be HTTPS.
 ```
 .
 ├── manifest-offline.yml
-├── vars.yml
 ├── client-rag-demo-backend-<version>.jar
 ├── client-rag-demo-sharepoint-batch-<version>.jar
 └── frontend-dist/
 ```
 
 ```bash
-cf push -f manifest-offline.yml --vars-file vars.yml
+cf push -f manifest-offline.yml
 ```
 
 Push the backend **first and let it start**: it runs the Liquibase migrations, and
@@ -215,7 +209,7 @@ cf run-task client-rag-demo-sharepoint-batch
 - Both Java apps set `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'`. For the backend this stops
   `java_buildpack` injecting a second copy of `java-cfenv` next to the one bundled in the jar; for
   sharepoint-batch it avoids the buildpack's own datasource rebinding. Keep it.
-- Backend startup failures that name a GenAI service and say what to fix:
+- Backend and sharepoint-batch startup failures that name a GenAI service and say what to fix:
   - "No bound service named '...'" - the service isn't in the manifest's `services:` or is named
     differently; set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE`.
   - "grants N CHAT/EMBEDDING models" - the service is on an all-models plan; bind a single-model
@@ -228,9 +222,9 @@ cf run-task client-rag-demo-sharepoint-batch
 | Workflow | Purpose |
 |---|---|
 | `backend.yaml` | Test backend; publish its executable jar (GitHub Packages). |
-| `sharepoint-batch.yaml` | Test the batch service; publish its native-image container (GHCR) and executable jar (GitHub Packages). |
+| `sharepoint-batch.yaml` | Test the batch service; publish its executable jar (GitHub Packages). |
 | `frontend-package.yaml` | Publish the offline frontend bundle as the `frontend-latest` release asset. |
-| `deploy-cf.yaml` | Build the backend jar, then `cf push` all apps, gated by a `production` environment approval. |
+| `deploy-cf.yaml` | Build the backend and batch jars, then `cf push` all apps, gated by a `production` environment approval. |
 
 ## Further reading
 

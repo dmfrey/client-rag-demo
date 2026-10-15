@@ -1,0 +1,29 @@
+# Activated via SPRING_PROFILES_ACTIVE=cloud in manifest.yml (the buildpack's own java-cfenv, which
+# used to activate it, is disabled - the jar bundles its own copy).
+
+# The embedding model comes from the bound GenAI service named here, selected by ingestion-core's
+# GenaiBindingsConfiguration, instead of from spring.ai.openai.* autoconfiguration - so every
+# OpenAI autoconfig is switched off. This app only embeds documents (no chat), so only the
+# embedding service is bound; the unused chat/audio/image/moderation autoconfigs would otherwise
+# fail startup demanding an API key that nothing sets.
+app:
+  genai:
+    # Override with APP_GENAI_EMBEDDING_SERVICE if the service is named differently. Normally a
+    # single-model plan; app.genai.embedding-model only picks one model out of an all-models plan.
+    embedding-service: client-rag-demo-embed
+
+spring:
+  autoconfigure:
+    exclude:
+      # java-cfenv-boot-tanzu-genai's own locator is one bean for one genai.locator.* property set;
+      # GenaiBindingsConfiguration builds its locator from the named service instead.
+      - io.pivotal.cfenv.boot.genai.GenaiLocatorAutoConfiguration
+  ai:
+    model:
+      chat: none
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none

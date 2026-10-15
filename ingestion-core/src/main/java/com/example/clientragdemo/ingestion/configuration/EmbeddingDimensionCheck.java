@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import java.util.List;
 
@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +17,11 @@ import org.springframework.stereotype.Component;
 // error on the first document ingested. Reading N back from the database (the source of truth, not
 // a setting that could drift from it) and comparing it with what the configured embedding model
 // actually returns makes that mismatch a clear startup failure instead.
+//
+// Runs ahead of every other ApplicationRunner: in sharepoint-batch the job itself is launched by an
+// ApplicationRunner, and it would otherwise start ingesting before this check had a say.
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class EmbeddingDimensionCheck implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(EmbeddingDimensionCheck.class);

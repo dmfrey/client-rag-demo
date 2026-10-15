@@ -1,4 +1,4 @@
-package com.example.clientragdemo.configuration;
+package com.example.clientragdemo.ingestion.configuration;
 
 import io.pivotal.cfenv.boot.genai.GenaiLocator;
 
@@ -7,7 +7,7 @@ import io.pivotal.cfenv.boot.genai.GenaiLocator;
 // locator (one genai.locator.* property set), so with a separate service per model the bindings
 // would overwrite each other.
 @FunctionalInterface
-interface GenaiLocatorFactory {
+public interface GenaiLocatorFactory {
 
     GenaiLocator forService(String serviceName);
 }

@@ -22,7 +22,6 @@ repositories {
 ext {
 	set('datasourceMicrometerVersion', "2.2.1")
 	set('springAiVersion', "2.0.1")
-	set('cfenvVersion', "4.0.2")
 }
 
 dependencies {
@@ -54,13 +53,10 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-vector-store-advisor'
 
-	// Cloud Foundry service binding support: java-cfenv-boot sets spring.datasource.* from
-	// the bound Postgres service in VCAP_SERVICES; the tanzu-genai module registers a GenaiLocator
-	// (genai.locator.*) that lists the models the bound ai-models instance grants, so models are
-	// chosen by name at startup instead of passing the proxy URL/API key through vars.yml. Both are
-	// inert when VCAP_SERVICES is absent (local dev, tests).
-	implementation "io.pivotal.cfenv:java-cfenv-boot:${cfenvVersion}"
-	implementation "io.pivotal.cfenv:java-cfenv-boot-tanzu-genai:${cfenvVersion}"
+	// Cloud Foundry service bindings (java-cfenv-boot: Postgres -> spring.datasource.*, and
+	// java-cfenv-boot-tanzu-genai: the GenAI model locator) come with ingestion-core as api
+	// dependencies, shared with sharepoint-batch - see its build.gradle. Both are inert when
+	// VCAP_SERVICES is absent (local dev, tests).
 
 	// Observability dependencies
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'

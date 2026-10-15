@@ -1,11 +1,10 @@
 # OFFLINE variant of manifest.yml: deploys the backend and sharepoint-batch as plain executable
-# jars (java_buildpack) instead of pulling Docker images from GHCR, and the frontend from its
+# jars (Java buildpack) instead of pulling Docker images from GHCR, and the frontend from its
 # pre-built bundle. For a CF foundation/network with no access to ghcr.io or npm.
 #
 # Expected layout next to this file (latest GitHub Packages SNAPSHOT file names - they change on each publish; update `path:` below):
 #
 #   manifest-offline.yml
-#   vars.yml                                          (copy of vars.yml.example, filled in)
 #   client-rag-demo-backend-0.0.1-20260825.162146-1.jar        (GitHub Packages: com.example:client-rag-demo-backend)
 #   client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
 #   frontend-dist/                                    (extracted frontend-dist.tar.gz from the frontend-latest release, with
@@ -13,12 +12,15 @@
 #                                                      by the backend's real route - see the
 #                                                      frontend app below)
 #
-# Then: cf push -f manifest-offline.yml --vars-file vars.yml
+# Then: cf push -f manifest-offline.yml
+#
+# There is no vars.yml: both Java apps read Postgres and their model endpoint from their service
+# bindings (java-cfenv). The services must exist first - see README.md, "Foundation prerequisites".
 #
 # Prerequisites on the (offline) foundation:
 #   - an offline-capable Java buildpack that bundles a Java 25 JRE (the jars are built for 25).
 #     Written as `java_buildpack_offline`, which is what the original foundation calls it - check
-#     `cf buildpacks` on yours and change the two `buildpacks:` entries below if it differs.
+#     `cf buildpacks` on yours and change the `buildpacks:` entries of the two Java apps below if it differs.
 #   - staticfile_buildpack.
 version: 1
 applications:
@@ -26,7 +28,7 @@ applications:
     path: ./client-rag-demo-backend-0.0.1-20260825.162146-1.jar
     buildpacks:
       - java_buildpack_offline
-    memory: 1500M  # JVM, not native image - needs more headroom than the 1G the native build ran in
+    memory: 1500M  # JVM, not the old native image
     instances: 1
     routes:
       - route: client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
@@ -116,36 +118,41 @@ applications:
     # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
     # its earlier @Scheduled-based design).
     #
-    # Plain JVM jar via java_buildpack here (no Docker/GHCR access offline).
+    # Plain executable jar via java_buildpack_offline (no Docker/GHCR access offline).
     path: ./client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
     buildpacks:
       - java_buildpack_offline
-    memory: 1G
+    # Used by `cf run-task` too (a task defaults to the app's memory). Document parsing (Tika/POI/
+    # PDFBox) on a JVM wants headroom - same size as the backend.
+    memory: 1500M
     # Never started as a long-running process - see the note above. `cf run-task` uses the
     # staged droplet directly regardless of this app's own "started"/"stopped" state.
     instances: 0
     no-route: true
     env:
+      # Activates application-cloud.yaml: the embedding model comes from the bound
+      # client-rag-demo-embed service (ingestion-core's GenaiBindingsConfiguration), and Postgres
+      # from client-rag-demo-db (java-cfenv-boot, bundled in the jar) - no vars.yml involved. This
+      # app only embeds documents (no chat), so it is bound to the embedding service alone. If that
+      # service is named differently, set APP_GENAI_EMBEDDING_SERVICE; an all-models plan is
+      # rejected as ambiguous at startup unless APP_GENAI_EMBEDDING_MODEL names the model. At
+      # startup the model's dimension is also checked against vector_store.embedding (768, fixed by
+      # the Liquibase schema backend runs) and a mismatch stops the task before it ingests anything.
+      SPRING_PROFILES_ACTIVE: cloud
+      # The buildpack would otherwise add its own copy of java-cfenv-boot next to the one in the
+      # jar and activate a `cloud` profile of its own - disabled so there's exactly one. (It also
+      # broke @EnableJdbcRepositories outright on the first java_buildpack deploy - see CLAUDE.md.)
       JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
+      # The jar targets Java 25.
       JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
-      # This app doesn't use java-cfenv, so its Postgres and embedding-service credentials come
-      # from vars.yml rather than from its bindings. It only embeds documents (no chat), so it is
-      # bound to the embedding service alone and ai-base-url / ai-api-key are that service's
-      # credentials.endpoint.openai_api_base / .api_key.
-      SPRING_DATASOURCE_URL: ((db-jdbc-url))
-      SPRING_DATASOURCE_USERNAME: ((db-username))
-      SPRING_DATASOURCE_PASSWORD: ((db-password))
-      SPRING_AI_OPENAI_BASE_URL: ((ai-base-url))
-      SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
-      # The one model the embedding service grants (client-rag-demo-embed's plan).
-      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
       # Kept in sync with the backend app's own APP_DOCUMENTS_INGESTION_CHUNK_SIZE above - see its
       # comment for why this is 128, not the original 256.
       APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "128"
       # Real SharePoint/Graph credentials aren't available yet (see CLAUDE.md) - this deployment
       # exercises the pipeline against a mounted rag-docs-volume (block-storage, bound below)
       # instead, standing in for a real SharePoint drive per the client's own suggestion that an
-      # NFS-style mount might substitute for SharePoint in some environments.
+      # NFS-style mount might substitute for SharePoint in some environments. A plain JVM jar picks
+      # the source at runtime from this variable (the old native image baked it in at build time).
       APP_INGESTION_SOURCE: filesystem
       # block-storage's bind schema publishes no bind-time parameters (confirmed via `cf curl
       # /v3/service_plans?service_offering_names=block-storage` - schemas.service_binding.create
@@ -155,8 +162,8 @@ applications:
       # VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir. This placeholder needs
       # replacing with that real value (`cf set-env ... APP_FILESYSTEM_SOURCE_PATH <path>` then
       # `cf restage`) after every fresh bind - it will not work as pushed. A real gap worth fixing
-      # (e.g. by having the app read VCAP_SERVICES itself at startup) if this filesystem source
-      # becomes more than a one-off test.
+      # now that java-cfenv is on the classpath: the app could read the mount path from its own
+      # VCAP_SERVICES instead.
       APP_FILESYSTEM_SOURCE_PATH: /var/vcap/data/REPLACE-WITH-ACTUAL-BINDING-GUID-FROM-VCAP-SERVICES
     services:
       - client-rag-demo-db
