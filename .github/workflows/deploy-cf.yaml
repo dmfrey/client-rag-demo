@@ -83,9 +83,11 @@ jobs:
           cf target -o "$CF_ORG" -s "$CF_SPACE"
 
       # Only sharepoint-batch still takes its credentials this way - the backend reads its Postgres
-      # and model-proxy credentials straight from its service bindings (java-cfenv, see
-      # manifest.yml), so none of the values below reach it. Drop this step once sharepoint-batch
-      # does the same.
+      # and GenAI credentials straight from its service bindings (java-cfenv, see manifest.yml),
+      # so none of the values below reach it. sharepoint-batch only embeds documents, so its AI
+      # credentials are the embedding service's (client-rag-demo-embed), including that service's
+      # own endpoint URL - each GenAI service has a distinct one. Drop this step once
+      # sharepoint-batch reads its bindings too.
       #
       # Reads the same client-rag-demo-db-key/client-rag-demo-ai-key service keys the manifest.yml
       # header comment already documents for the manual local workflow, rather than duplicating
@@ -99,26 +101,29 @@ jobs:
       - name: Fetch service credentials and write vars file
         run: |
           cf create-service-key client-rag-demo-db client-rag-demo-db-key >/dev/null 2>&1 || true
-          cf create-service-key client-rag-demo-ai client-rag-demo-ai-key >/dev/null 2>&1 || true
+          cf create-service-key client-rag-demo-embed client-rag-demo-embed-key >/dev/null 2>&1 || true
 
           DB_JSON=$(cf service-key client-rag-demo-db client-rag-demo-db-key | sed -n '/^{/,$p')
-          AI_JSON=$(cf service-key client-rag-demo-ai client-rag-demo-ai-key | sed -n '/^{/,$p')
+          AI_JSON=$(cf service-key client-rag-demo-embed client-rag-demo-embed-key | sed -n '/^{/,$p')
 
           DB_JDBC_URL=$(echo "$DB_JSON" | jq -r '.credentials.jdbcUrl')
           DB_USERNAME=$(echo "$DB_JSON" | jq -r '.credentials.user')
           DB_PASSWORD=$(echo "$DB_JSON" | jq -r '.credentials.password')
           AI_API_KEY=$(echo "$AI_JSON" | jq -r '.credentials.endpoint.api_key')
+          AI_BASE_URL=$(echo "$AI_JSON" | jq -r '.credentials.endpoint.openai_api_base')
 
           echo "::add-mask::$DB_JDBC_URL"
           echo "::add-mask::$DB_USERNAME"
           echo "::add-mask::$DB_PASSWORD"
           echo "::add-mask::$AI_API_KEY"
+          echo "::add-mask::$AI_BASE_URL"
 
           cat > vars.yml <<VARS_EOF
           db-jdbc-url: "$DB_JDBC_URL"
           db-username: "$DB_USERNAME"
           db-password: "$DB_PASSWORD"
           ai-api-key: "$AI_API_KEY"
+          ai-base-url: "$AI_BASE_URL"
           VARS_EOF
 
       # Pushes all three apps declared in manifest.yml (backend, frontend, sharepoint-batch).

@@ -1,11 +1,15 @@
-# Template for vars.yml (gitignored - real credentials never get committed). Copy this file to
-# vars.yml and fill in real values from the service keys:
+# Template for vars.yml (gitignored - real credentials never get committed). Only
+# client-rag-demo-sharepoint-batch still reads these; the backend takes its Postgres and GenAI
+# credentials straight from its service bindings (java-cfenv). Copy this file to vars.yml and fill
+# it in from the service keys:
 #   cf create-service-key client-rag-demo-db client-rag-demo-db-key
 #   cf service-key client-rag-demo-db client-rag-demo-db-key
-#   cf create-service-key client-rag-demo-ai client-rag-demo-ai-key
-#   cf service-key client-rag-demo-ai client-rag-demo-ai-key
+#   cf create-service-key client-rag-demo-embed client-rag-demo-embed-key
+#   cf service-key client-rag-demo-embed client-rag-demo-embed-key
 # Then: cf push --vars-file vars.yml
 db-jdbc-url: jdbc:postgresql://<credentials.hosts[0]>:<credentials.port>/<credentials.db>
 db-username: <credentials.user>
 db-password: <credentials.password>
+# client-rag-demo-embed's key: credentials.endpoint.openai_api_base and credentials.endpoint.api_key
+ai-base-url: <credentials.endpoint.openai_api_base>
 ai-api-key: <credentials.endpoint.api_key>

@@ -8,10 +8,10 @@
 #      since the frontend build needs it and CF manifest variables aren't resolved until push
 #      time, too late for a static build.
 #   2. cd frontend && VITE_API_BASE_URL=https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com npm run build
-#   3. client-rag-demo-db (postgres) and client-rag-demo-ai (ai-models) already exist (`cf
-#      services`) and are bound to the backend below - it reads its Postgres and model-proxy
-#      credentials straight from those bindings (java-cfenv), so the backend needs no vars.yml
-#      values. sharepoint-batch still takes its credentials from vars.yml (gitignored - see
+#   3. client-rag-demo-db (postgres), client-rag-demo-chat and client-rag-demo-embed (two
+#      single-model ai-models services) already exist (`cf services`) and are bound to the
+#      backend below - it reads its Postgres and model-proxy credentials straight from those
+#      bindings (java-cfenv), so the backend needs no vars.yml values. sharepoint-batch still takes its credentials from vars.yml (gitignored - see
 #      vars.yml.example for the shape) for CF's ((var)) substitution.
 #   4. ./gradlew :backend:bootJar   (produces the jar the backend entry below pushes)
 #   5. cf push --vars-file vars.yml   (from the repo root, using this manifest)
@@ -45,23 +45,23 @@ applications:
       SPRING_PROFILES_ACTIVE: cloud
       # Postgres and the GenAI proxy come from the bound services, not from env vars: the jar
       # bundles java-cfenv-boot (sets spring.datasource.* from the client-rag-demo-db binding)
-      # and java-cfenv-boot-tanzu-genai (finds the models client-rag-demo-ai grants via its
-      # config_url), and GenaiModelConfiguration picks the chat/embedding model by the names
-      # below. Nothing here needs a service key or vars.yml.
+      # and GenaiModelConfiguration reads the two GenAI services' endpoints from their bindings
+      # (see services: below). Nothing here needs a service key or vars.yml.
       #
       # The buildpack would otherwise add its own copy of java-cfenv-boot next to the one in the
       # jar and activate a `cloud` profile of its own - disabled so there's exactly one.
       JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
       # The jar targets Java 25.
       JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
-      # Names looked up in the bound service's model list (GenaiModelConfiguration) - the service
-      # can grant several models, and the app picks by these names, never "first available".
-      # openai/gpt-oss-120b (CHAT) and nomic-ai/nomic-embed-text-v2-moe (EMBEDDING) are picked
-      # from that list and confirmed working end-to-end (including a real embeddings call
-      # confirming 768 dimensions, matching vector_store's schema exactly - no migration needed).
-      # The embedding model is NOT freely swappable: its dimension is fixed by that schema.
-      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
-      SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
+      # Which model is used is decided by which GenAI service is bound, not by a name here: the
+      # chat model is the one client-rag-demo-chat grants and the embedding model the one
+      # client-rag-demo-embed grants (single-model plans - see services: below). The service names
+      # default to those two in application-cloud.yaml; if yours are named differently set
+      #   APP_GENAI_CHAT_SERVICE / APP_GENAI_EMBEDDING_SERVICE
+      # A service on an all-models plan is rejected as ambiguous at startup unless
+      #   APP_GENAI_CHAT_MODEL / APP_GENAI_EMBEDDING_MODEL
+      # name the model to use. At startup the embedding model's dimension is also checked against
+      # vector_store.embedding (768, fixed by the Liquibase schema) and a mismatch stops the app.
       # nomic-embed-text-v2-moe on this proxy enforces a 512-token limit - well under
       # TokenTextSplitter's 800-token default (application.yaml). TokenTextSplitter's chunkSize
       # is a hard cap under its own tokenizer (jtokkit's CL100K_BASE, an OpenAI/GPT-style BPE
@@ -87,8 +87,12 @@ applications:
       # confirmed against this specific instance/plan yet - if the Liquibase migration fails on
       # that CREATE EXTENSION step, that's the first thing to check.
       - client-rag-demo-db
-      # ai-models/tanzu-all-models - see the SPRING_AI_OPENAI_* comment above.
-      - client-rag-demo-ai
+      # Two ai-models services, each on a single-model plan, so each one's model is explicit:
+      #   cf create-service ai-models tanzu-gpt-oss-120b client-rag-demo-chat       (CHAT)
+      #   cf create-service ai-models tanzu-nomic-embed-text-v2 client-rag-demo-embed   (EMBEDDING)
+      # Their endpoints and API keys come from these bindings (java-cfenv), not from vars.yml.
+      - client-rag-demo-chat
+      - client-rag-demo-embed
 
   - name: client-rag-demo-frontend
     # Built by `npm run build` (see step 2 above) - not built by CF, just served as-is.
@@ -128,14 +132,16 @@ applications:
     instances: 0
     no-route: true
     env:
-      # Same shared Postgres/genai-service bindings as backend - see its own env: comments above
-      # for why real values come from vars.yml rather than VCAP_SERVICES.
+      # This app doesn't use java-cfenv, so its Postgres and embedding-service credentials come
+      # from vars.yml rather than from its bindings. It only embeds documents (no chat), so it is
+      # bound to the embedding service alone and ai-base-url / ai-api-key are that service's
+      # credentials.endpoint.openai_api_base / .api_key.
       SPRING_DATASOURCE_URL: ((db-jdbc-url))
       SPRING_DATASOURCE_USERNAME: ((db-username))
       SPRING_DATASOURCE_PASSWORD: ((db-password))
-      SPRING_AI_OPENAI_BASE_URL: https://genai-proxy.sys.tas-ndc.kuhn-labs.com/tanzu-all-models-1a56b7a/openai
+      SPRING_AI_OPENAI_BASE_URL: ((ai-base-url))
       SPRING_AI_OPENAI_API_KEY: ((ai-api-key))
-      SPRING_AI_OPENAI_CHAT_MODEL: openai/gpt-oss-120b
+      # The one model the embedding service grants (client-rag-demo-embed's plan).
       SPRING_AI_OPENAI_EMBEDDING_MODEL: nomic-ai/nomic-embed-text-v2-moe
       # Kept in sync with the backend app's own APP_DOCUMENTS_INGESTION_CHUNK_SIZE above - see its
       # comment for why this is 128, not the original 256.
@@ -158,5 +164,5 @@ applications:
       APP_FILESYSTEM_SOURCE_PATH: /var/vcap/data/REPLACE-WITH-ACTUAL-BINDING-GUID-FROM-VCAP-SERVICES
     services:
       - client-rag-demo-db
-      - client-rag-demo-ai
+      - client-rag-demo-embed
       - rag-docs-volume

@@ -118,15 +118,30 @@ lines in the manifest to match what you downloaded.
 - A Java buildpack that bundles a **Java 25** JRE (offline variant), and `staticfile_buildpack`.
   The manifests name them `java_buildpack_offline` and `staticfile_buildpack`; run `cf buildpacks`
   and change the `buildpacks:` entries in `manifest-offline.yml` if yours are named differently.
-- Service instances `client-rag-demo-db` (PostgreSQL **with the pgvector extension available**)
-  and `client-rag-demo-ai` (OpenAI-compatible chat + embedding models), plus `rag-docs-volume`
-  if using the filesystem source.
-- **Backend:** bind the two services (the manifest does this) - that is all. The backend finds
-  Postgres and the model proxy itself from `VCAP_SERVICES` (`java-cfenv`). The AI service binding
-  must carry the `genai` tag (the Tanzu `ai-models` plan does) and expose `credentials.endpoint`
-  with a `config_url`, which the backend uses to list the models the binding grants.
-- **sharepoint-batch** (if you deploy it): still takes credentials from `vars.yml` - create service
-  keys and fill in `db-jdbc-url`, `db-username`, `db-password`, `ai-api-key`.
+- A PostgreSQL service instance `client-rag-demo-db` (**with the pgvector extension available**),
+  plus `rag-docs-volume` if using the filesystem source.
+- **Two single-model GenAI services**, one per model, so which model is used is decided by which
+  service you create - not by a model name in a manifest:
+
+  ```bash
+  cf create-service ai-models <chat-model-plan>      client-rag-demo-chat    # a CHAT model
+  cf create-service ai-models <embedding-model-plan> client-rag-demo-embed   # a 768-dimension EMBEDDING model
+  ```
+
+  (On the original foundation these are the `tanzu-gpt-oss-120b` and `tanzu-nomic-embed-text-v2`
+  plans; list yours with `cf marketplace -e ai-models`.) Each binding must expose
+  `credentials.endpoint` with `config_url`, `api_key` and `api_base` - the Tanzu `ai-models`
+  offering does. Each service should grant exactly one model of its kind; a service on an
+  all-models plan is rejected at startup as ambiguous unless you name the model with
+  `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
+- **Backend:** bind the three services (the manifest does this) - that is all. The backend finds
+  Postgres and both model endpoints itself from `VCAP_SERVICES` (`java-cfenv`), with no service
+  keys and nothing in `vars.yml`.
+- **sharepoint-batch** (if you deploy it): still takes credentials from `vars.yml`. It only embeds
+  documents, so it is bound to the embedding service; create service keys for the database and for
+  `client-rag-demo-embed` and fill in `db-jdbc-url`, `db-username`, `db-password`, `ai-base-url`
+  (the embedding key's `credentials.endpoint.openai_api_base`) and `ai-api-key`. Each GenAI service
+  has its own endpoint URL, so the batch service's base URL is the embedding service's.
 
 ### 3. Values you must change
 
@@ -137,20 +152,22 @@ Everything in `manifest-offline.yml` that is specific to the original foundation
 | Backend route `client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com` | backend `routes` | your backend FQDN |
 | Frontend route `client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com` | frontend `routes` | your frontend FQDN |
 | `APP_CORS_ALLOWED_ORIGINS` | backend env | `https://<frontend FQDN>` exactly (scheme + host, no trailing slash) |
-| `SPRING_AI_OPENAI_BASE_URL` | **batch env only** | your model endpoint's base URL (`https://genai-proxy.sys.tas-ndc.kuhn-labs.com/...` is this foundation's). The backend no longer has this - it comes from the AI service binding |
-| `SPRING_AI_OPENAI_CHAT_MODEL` | backend and batch env | a chat model your AI service grants (currently `openai/gpt-oss-120b`). The backend looks this name up in the binding's model list, so it must match exactly |
-| `SPRING_AI_OPENAI_EMBEDDING_MODEL` | backend and batch env | an embedding model your AI service grants (currently `nomic-ai/nomic-embed-text-v2-moe`), looked up by exact name — see warning below |
+| `SPRING_AI_OPENAI_EMBEDDING_MODEL` | **batch env only** | the one model your embedding service grants (currently `nomic-ai/nomic-embed-text-v2-moe`). The backend has no model names - it uses whatever its two services grant |
+| `ai-base-url` / `ai-api-key` | `vars.yml` (batch only) | the embedding service key's `openai_api_base` / `api_key` |
 | `APP_DOCUMENTS_INGESTION_CHUNK_SIZE` | backend and batch env | `128` is tuned for a 512-token embedding limit; adjust to your model, keep both apps equal |
-| Service names `client-rag-demo-db`, `client-rag-demo-ai`, `rag-docs-volume` | `services:` | your service instance names |
+| Service names `client-rag-demo-db`, `client-rag-demo-chat`, `client-rag-demo-embed`, `rag-docs-volume` | `services:` | your service instance names. If the chat/embedding services are named differently, also set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE` on the backend |
 | `APP_INGESTION_SOURCE` | batch env | `filesystem` (current) or `graph` |
 | `APP_FILESYSTEM_SOURCE_PATH` | batch env | the volume mount path (see `cf env`; changes on each fresh bind) |
 | Graph settings (`APP_SHAREPOINT_TENANT_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`, `_SITE_ID`, `_DRIVE_ID`) | batch env | only if `APP_INGESTION_SOURCE=graph`; not in the manifest by default — add them |
 | jar `path:` values | backend, batch | the actual downloaded file names |
 | `memory` | backend (1500M) | tune for the JVM; staging or running a JVM app can need more memory than expected |
 
-> **Embedding model warning.** The pgvector column is `vector(768)`. The embedding model must
-> output **768 dimensions**; a different dimension requires a schema migration and a full
-> reindex. The chat model can be changed freely.
+> **Embedding model dimension.** The pgvector column is `vector(768)`, fixed by the Liquibase
+> schema; nothing in a manifest states it. At startup the backend reads the column's dimension
+> back from the database, asks the embedding model for a test vector and **refuses to start** if
+> the two differ, naming both numbers - so a wrong embedding service shows up immediately, not on
+> the first upload. Using a model with a different dimension requires a schema migration and a
+> full reindex. The chat model can be changed freely (swap the service).
 
 ### 4. Prepare the frontend
 
@@ -198,9 +215,13 @@ cf run-task client-rag-demo-sharepoint-batch
 - Both Java apps set `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'`. For the backend this stops
   `java_buildpack` injecting a second copy of `java-cfenv` next to the one bundled in the jar; for
   sharepoint-batch it avoids the buildpack's own datasource rebinding. Keep it.
-- If the backend fails at startup with "Unable to find chat/embedding model with name ...", the
-  configured model name is not in the AI service's model list - check
-  `SPRING_AI_OPENAI_CHAT_MODEL` / `SPRING_AI_OPENAI_EMBEDDING_MODEL`.
+- Backend startup failures that name a GenAI service and say what to fix:
+  - "No bound service named '...'" - the service isn't in the manifest's `services:` or is named
+    differently; set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE`.
+  - "grants N CHAT/EMBEDDING models" - the service is on an all-models plan; bind a single-model
+    plan, or name the model with `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
+  - "returns N-dimension vectors but vector_store.embedding is vector(768)" - the embedding service
+    grants a model of a different dimension (see above).
 
 ## CI/CD
 

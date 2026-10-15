@@ -5,41 +5,51 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.pivotal.cfenv.boot.genai.GenaiLocator;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-// The bound GenAI service can grant several models; the point of GenaiModelConfiguration is that
-// the app picks its chat/embedding model by the configured name, never "first available" (the
-// embedding model's dimension is baked into vector_store's schema).
+// Chat and embedding models come from two separately bound GenAI services, each looked up by
+// name; the model used is whichever one that service grants.
 class GenaiModelConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(GenaiModelConfiguration.class)
-            .withPropertyValues(
-                    "spring.ai.openai.chat.model=openai/gpt-oss-120b",
-                    "spring.ai.openai.embedding.model=nomic-ai/nomic-embed-text-v2-moe");
+            .withPropertyValues("app.genai.chat-service=chat-svc", "app.genai.embedding-service=embed-svc");
 
     @Test
-    void selectsConfiguredModelsByName() {
+    void takesTheChatModelFromTheChatServiceAndTheEmbeddingModelFromTheEmbeddingService() {
         ChatModel chat = mock(ChatModel.class);
         EmbeddingModel embedding = mock(EmbeddingModel.class);
-        GenaiLocator locator = mock(GenaiLocator.class);
-        when(locator.getChatModelByName("openai/gpt-oss-120b")).thenReturn(chat);
-        when(locator.getEmbeddingModelByName("nomic-ai/nomic-embed-text-v2-moe")).thenReturn(embedding);
+        GenaiLocator chatLocator = mock(GenaiLocator.class);
+        GenaiLocator embedLocator = mock(GenaiLocator.class);
+        when(chatLocator.getModelNamesByCapability("CHAT")).thenReturn(List.of("openai/gpt-oss-120b"));
+        when(chatLocator.getChatModelByName("openai/gpt-oss-120b")).thenReturn(chat);
+        when(embedLocator.getModelNamesByCapability("EMBEDDING")).thenReturn(List.of("nomic-ai/nomic-embed-text-v2-moe"));
+        when(embedLocator.getEmbeddingModelByName("nomic-ai/nomic-embed-text-v2-moe")).thenReturn(embedding);
+        GenaiLocatorFactory factory = name -> name.equals("chat-svc") ? chatLocator : embedLocator;
 
-        runner.withBean(GenaiLocator.class, () -> locator)
-                .withPropertyValues("genai.locator.config-url=http://unused")
-                .run(context -> {
-                    assertThat(context.getBean(ChatModel.class)).isSameAs(chat);
-                    assertThat(context.getBean(EmbeddingModel.class)).isSameAs(embedding);
-                });
+        runner.withBean(GenaiLocatorFactory.class, () -> factory).run(context -> {
+            assertThat(context.getBean(ChatModel.class)).isSameAs(chat);
+            assertThat(context.getBean(EmbeddingModel.class)).isSameAs(embedding);
+        });
     }
 
     @Test
-    void inactiveWithoutABoundGenaiService() {
-        runner.run(context -> {
+    void failsStartupWhenAServiceIsAmbiguous() {
+        GenaiLocator allModels = mock(GenaiLocator.class);
+        when(allModels.getModelNamesByCapability("CHAT")).thenReturn(List.of("a", "b"));
+        when(allModels.getModelNamesByCapability("EMBEDDING")).thenReturn(List.of("e"));
+
+        runner.withBean(GenaiLocatorFactory.class, () -> name -> allModels).run(context ->
+                assertThat(context).hasFailed().getFailure().rootCause().hasMessageContaining("2 CHAT models"));
+    }
+
+    @Test
+    void inactiveWithoutTheServiceNames() {
+        new ApplicationContextRunner().withUserConfiguration(GenaiModelConfiguration.class).run(context -> {
             assertThat(context).doesNotHaveBean(ChatModel.class);
             assertThat(context).doesNotHaveBean(EmbeddingModel.class);
         });

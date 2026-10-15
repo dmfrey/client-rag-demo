@@ -16,13 +16,26 @@ server:
         same-site: none
         secure: true
 
+# On Cloud Foundry the chat and embedding models come from two bound GenAI services, selected by
+# GenaiModelConfiguration (app.genai.*) rather than from spring.ai.openai.* autoconfiguration - so
+# every OpenAI autoconfig is switched off. Besides the two models, the unused audio/image/moderation
+# ones would otherwise fail startup demanding an API key that nothing sets.
+app:
+  genai:
+    # Service instance names as bound in manifest.yml (override with APP_GENAI_CHAT_SERVICE /
+    # APP_GENAI_EMBEDDING_SERVICE if yours are named differently). Each service is normally on a
+    # single-model plan; app.genai.chat-model / embedding-model are only needed to pick one model
+    # out of an all-models plan.
+    chat-service: client-rag-demo-chat
+    embedding-service: client-rag-demo-embed
+
 spring:
+  autoconfigure:
+    exclude:
+      # java-cfenv-boot-tanzu-genai's own locator is one bean for one genai.locator.* property set,
+      # which can't represent two services - GenaiModelConfiguration builds one locator per service.
+      - io.pivotal.cfenv.boot.genai.GenaiLocatorAutoConfiguration
   ai:
-    # On Cloud Foundry the chat and embedding models come from the bound GenAI service via
-    # GenaiModelConfiguration (java-cfenv's GenaiLocator), not from spring.ai.openai.*
-    # autoconfiguration - so every OpenAI autoconfig is switched off. Besides the two models this
-    # app doesn't build here, the unused audio/image/moderation ones would otherwise fail
-    # startup demanding an API key that nothing sets.
     model:
       chat: none
       embedding: none
