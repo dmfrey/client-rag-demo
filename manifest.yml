@@ -16,7 +16,9 @@
 #   4. ./gradlew :backend:bootJar   (produces the jar the backend entry below pushes)
 #   5. cf push --vars-file vars.yml   (from the repo root, using this manifest)
 #
-# The backend is deployed as a plain executable jar via java_buildpack (it used to be a GraalVM
+# The backend is deployed as a plain executable jar via java_buildpack_offline - this foundation's
+# name for the Java buildpack (`cf buildpacks`); a plain `java_buildpack` is rejected here as an
+# unknown buildpack (it used to be a GraalVM
 # native image from GHCR - dropped because java-cfenv's VCAP_SERVICES parsing, json-io, isn't
 # native-image friendly). deploy-cf.yaml builds the jar itself before pushing.
 version: 1
@@ -24,7 +26,7 @@ applications:
   - name: client-rag-demo-backend
     path: backend/build/libs/backend-0.0.1-SNAPSHOT.jar
     buildpacks:
-      - java_buildpack
+      - java_buildpack_offline
     memory: 1500M  # JVM, not the old native image
     instances: 1
     routes:

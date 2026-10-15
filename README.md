@@ -89,7 +89,7 @@ cd frontend && npm test
 ## Standard deployment (online)
 
 `manifest.yml` deploys all three apps to Cloud Foundry: the backend as an executable jar
-(`java_buildpack`; `./gradlew :backend:bootJar`), the batch service from a GHCR container image
+(`java_buildpack_offline`; `./gradlew :backend:bootJar`), the batch service from a GHCR container image
 (built by CI), the frontend via `staticfile_buildpack`. The backend needs no credentials in the
 manifest - it reads Postgres and the model proxy from its service bindings. The batch service
 still takes its credentials from `vars.yml` (copy `vars.yml.example`; never commit it). `deploy-cf.yaml` automates this behind a
@@ -115,7 +115,9 @@ lines in the manifest to match what you downloaded.
 
 ### 2. Foundation prerequisites
 
-- `java_buildpack` that bundles a **Java 25** JRE (offline variant), and `staticfile_buildpack`.
+- A Java buildpack that bundles a **Java 25** JRE (offline variant), and `staticfile_buildpack`.
+  The manifests name them `java_buildpack_offline` and `staticfile_buildpack`; run `cf buildpacks`
+  and change the `buildpacks:` entries in `manifest-offline.yml` if yours are named differently.
 - Service instances `client-rag-demo-db` (PostgreSQL **with the pgvector extension available**)
   and `client-rag-demo-ai` (OpenAI-compatible chat + embedding models), plus `rag-docs-volume`
   if using the filesystem source.

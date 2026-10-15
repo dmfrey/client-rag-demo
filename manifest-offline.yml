@@ -16,14 +16,16 @@
 # Then: cf push -f manifest-offline.yml --vars-file vars.yml
 #
 # Prerequisites on the (offline) foundation:
-#   - an offline-capable java_buildpack that bundles a Java 25 JRE (the jars are built for 25).
+#   - an offline-capable Java buildpack that bundles a Java 25 JRE (the jars are built for 25).
+#     Written as `java_buildpack_offline`, which is what the original foundation calls it - check
+#     `cf buildpacks` on yours and change the two `buildpacks:` entries below if it differs.
 #   - staticfile_buildpack.
 version: 1
 applications:
   - name: client-rag-demo-backend
     path: ./client-rag-demo-backend-0.0.1-20260825.162146-1.jar
     buildpacks:
-      - java_buildpack
+      - java_buildpack_offline
     memory: 1500M  # JVM, not native image - needs more headroom than the 1G the native build ran in
     instances: 1
     routes:
@@ -113,7 +115,7 @@ applications:
     # Plain JVM jar via java_buildpack here (no Docker/GHCR access offline).
     path: ./client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
     buildpacks:
-      - java_buildpack
+      - java_buildpack_offline
     memory: 1G
     # Never started as a long-running process - see the note above. `cf run-task` uses the
     # staged droplet directly regardless of this app's own "started"/"stopped" state.
