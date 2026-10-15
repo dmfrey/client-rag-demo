@@ -154,17 +154,12 @@ applications:
       # NFS-style mount might substitute for SharePoint in some environments. A plain JVM jar picks
       # the source at runtime from this variable (the old native image baked it in at build time).
       APP_INGESTION_SOURCE: filesystem
-      # block-storage's bind schema publishes no bind-time parameters (confirmed via `cf curl
-      # /v3/service_plans?service_offering_names=block-storage` - schemas.service_binding.create
-      # is empty), so there's no way to request a specific container mount path up front - CF
-      # assigns a GUID-based one per binding (/var/vcap/data/<binding-instance-guid>) that can
-      # only be read back after binding, from `cf env client-rag-demo-sharepoint-batch`'s
-      # VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir. This placeholder needs
-      # replacing with that real value (`cf set-env ... APP_FILESYSTEM_SOURCE_PATH <path>` then
-      # `cf restage`) after every fresh bind - it will not work as pushed. A real gap worth fixing
-      # now that java-cfenv is on the classpath: the app could read the mount path from its own
-      # VCAP_SERVICES instead.
-      APP_FILESYSTEM_SOURCE_PATH: /var/vcap/data/REPLACE-WITH-ACTUAL-BINDING-GUID-FROM-VCAP-SERVICES
+      # The volume's mount path (rag-docs-volume, bound below) needs no setting here: CF assigns a
+      # GUID-based container path per binding that is only knowable after binding, so the app reads
+      # it from its own VCAP_SERVICES (<service>.volume_mounts[].container_dir) at startup -
+      # FilesystemVolumeEnvironmentPostProcessor. APP_FILESYSTEM_SOURCE_PATH, if you set it,
+      # overrides that; APP_FILESYSTEM_SOURCE_VOLUME_SERVICE names the binding if yours isn't
+      # called rag-docs-volume.
     services:
       - client-rag-demo-db
       - client-rag-demo-embed

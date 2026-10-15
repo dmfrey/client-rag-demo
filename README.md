@@ -152,7 +152,7 @@ Everything in `manifest-offline.yml` that is specific to the original foundation
 | `APP_DOCUMENTS_INGESTION_CHUNK_SIZE` | backend and batch env | `128` is tuned for a 512-token embedding limit; adjust to your model, keep both apps equal |
 | Service names `client-rag-demo-db`, `client-rag-demo-chat`, `client-rag-demo-embed`, `rag-docs-volume` | `services:` | your service instance names. If the chat/embedding services are named differently, also set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE` on the backend and `APP_GENAI_EMBEDDING_SERVICE` on `sharepoint-batch` |
 | `APP_INGESTION_SOURCE` | batch env | `filesystem` (current) or `graph` |
-| `APP_FILESYSTEM_SOURCE_PATH` | batch env | the volume mount path (see `cf env`; changes on each fresh bind) |
+| `APP_FILESYSTEM_SOURCE_VOLUME_SERVICE` | batch env (optional) | only if your block-storage service isn't named `rag-docs-volume`. The mount path itself is read from the binding automatically - nothing to look up or copy after a fresh bind |
 | Graph settings (`APP_SHAREPOINT_TENANT_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`, `_SITE_ID`, `_DRIVE_ID`) | batch env | only if `APP_INGESTION_SOURCE=graph`; not in the manifest by default — add them |
 | jar `path:` values | backend, batch | the actual downloaded file names |
 | `memory` | backend (1500M) | tune for the JVM; staging or running a JVM app can need more memory than expected |

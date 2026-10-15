@@ -4,6 +4,8 @@ import com.example.sharepointbatch.sharepoint.application.domain.model.ChangedIt
 import com.example.sharepointbatch.sharepoint.application.port.out.ListChangedItemsPort;
 import com.example.sharepointbatch.sharepoint.configuration.FilesystemSourceProperties;
 import com.example.sharepointbatch.sharepoint.configuration.IngestionSourceProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -54,10 +56,13 @@ import java.util.List;
 @ConditionalOnProperty(prefix = "app.ingestion", name = "source", havingValue = IngestionSourceProperties.FILESYSTEM)
 class FilesystemChangedItemsAdapter implements ListChangedItemsPort {
 
+    private static final Logger log = LoggerFactory.getLogger(FilesystemChangedItemsAdapter.class);
+
     private final FilesystemSourceProperties properties;
 
     FilesystemChangedItemsAdapter(FilesystemSourceProperties properties) {
         this.properties = properties;
+        log.info("Filesystem ingestion source scans {}", properties.path());
     }
 
     @Override

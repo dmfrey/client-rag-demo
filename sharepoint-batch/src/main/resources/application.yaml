@@ -72,6 +72,9 @@ app:
     # scheduler triggers `cf run-task`, see manifest.yml) once this became a Spring Cloud Task.
     skip-limit: 50
   filesystem-source:
-    # Only meaningful when app.ingestion.source=filesystem - the mount path of a bound volume
-    # service (e.g. Cloud Foundry block-storage, see manifest.yml).
-    path: /mnt/rag-docs
+    # Only meaningful when app.ingestion.source=filesystem. No `path` default here on purpose: on
+    # Cloud Foundry FilesystemVolumeEnvironmentPostProcessor fills it in from the bound volume
+    # service's mount path (volume-service names the binding, default rag-docs-volume), and a
+    # default here would look like an explicit setting that overrides it. Set
+    # app.filesystem-source.path (APP_FILESYSTEM_SOURCE_PATH) to override; with neither,
+    # FilesystemSourceProperties falls back to /mnt/rag-docs.

@@ -333,10 +333,18 @@ in casual conversation means this.
   `FilesystemChangedItemsAdapter` always does one full recursive scan per invocation (size+mtime
   stands in for `eTag`) and **does not detect deletions** — a real gap before this becomes more
   than a one-off test. The container mount path a bound volume service gets is only knowable
-  *after* binding (`cf env <app>`'s `VCAP_SERVICES.block-storage[0].volume_mounts[0].container_dir`
-  — CF assigns a GUID-based path, there's no way to request one via bind parameters for this
-  broker), so `APP_FILESYSTEM_SOURCE_PATH` has to be set manually per fresh bind; see the
-  `manifest.yml` comment.
+  *after* binding (CF assigns a GUID-based path per binding, and the block-storage broker has no
+  bind parameters to request one), so the app reads it from its own `VCAP_SERVICES`:
+  `sharepoint/configuration/FilesystemVolumeEnvironmentPostProcessor` (registered in
+  `META-INF/spring.factories`) sets `app.filesystem-source.path` from
+  `<volume service>.volume_mounts[].container_dir` via `java-cfenv`'s `CfEnv` — the binding named by
+  `app.filesystem-source.volume-service` (default `rag-docs-volume`). It adds that as the
+  *lowest-precedence* property source and does nothing if the path is already set, so an explicit
+  `APP_FILESYSTEM_SOURCE_PATH` always wins; that is also why `application.yaml` deliberately has no
+  `path` default (it would count as explicit), and `FilesystemSourceProperties` falls back to
+  `/mnt/rag-docs` itself. This replaced a hand-copied `APP_FILESYSTEM_SOURCE_PATH` that had to be
+  re-set (`cf set-env` + restage) after every fresh bind. `FilesystemChangedItemsAdapter` logs the
+  path it will scan at startup.
 - **Deployment: plain executable jar via `java_buildpack_offline`, bindings via `java-cfenv`.** It has
   been through three shapes: a JVM jar (original), a GraalVM native-image container (to dodge
   `java_buildpack` staging OOMs, Exit status 137 on three cells), and now a JVM jar again — because
