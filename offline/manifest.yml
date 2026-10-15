@@ -1,44 +1,45 @@
-# OFFLINE variant of manifest.yml: deploys the backend and sharepoint-batch as plain executable
+# OFFLINE variant of ../manifest.yml: deploys the backend and sharepoint-batch as plain executable
 # jars (Java buildpack) instead of pulling Docker images from GHCR, and the frontend from its
 # pre-built bundle. For a CF foundation/network with no access to ghcr.io or npm.
 #
-# Expected layout next to this file (latest GitHub Packages SNAPSHOT file names - they change on each publish; update `path:` below):
+# Everything that differs from site to site is a CF manifest variable filled in from vars.yml (copy
+# vars.yml.example and edit it) - nothing in this file needs hand-editing onsite. Variables that
+# must agree with each other (the frontend route and the backend's CORS origin; a service's name in
+# `services:` and the setting the app uses to find it) are driven by ONE variable each, so they
+# cannot drift apart.
 #
-#   manifest-offline.yml
-#   client-rag-demo-backend-0.0.1-20260825.162146-1.jar        (GitHub Packages: com.example:client-rag-demo-backend)
-#   client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
-#   frontend-dist/                                    (extracted frontend-dist.tar.gz from the frontend-latest release, with
-#                                                      __RUNTIME_API_BASE_URL__ already sed-replaced
-#                                                      by the backend's real route - see the
-#                                                      frontend app below)
+# Folder layout (this whole offline/ folder is what you carry onsite):
 #
-# Then: cf push -f manifest-offline.yml
+#   manifest.yml            this file
+#   vars.yml                your site's values (from vars.yml.example)
+#   preflight.sh            checks vars, files, buildpacks, services and routes before pushing
+#   prepare-frontend.sh     points the pre-built frontend bundle at your backend route
+#   deploy.sh               preflight + prepare-frontend + cf push, in one go
+#   <backend jar>           GitHub Packages: com.example:client-rag-demo-backend
+#   <batch jar>             GitHub Packages: com.example:client-rag-demo-sharepoint-batch
+#   frontend-dist.tar.gz    GitHub Release frontend-latest (extracted into ./frontend-dist)
 #
-# There is no vars.yml: both Java apps read Postgres and their model endpoint from their service
-# bindings (java-cfenv). The services must exist first - see README.md, "Foundation prerequisites".
+# Then, from this folder:  ./deploy.sh frontend-dist.tar.gz     (or step by step - see README.md)
 #
-# Prerequisites on the (offline) foundation:
-#   - an offline-capable Java buildpack that bundles a Java 25 JRE (the jars are built for 25).
-#     Written as `java_buildpack_offline`, which is what the original foundation calls it - check
-#     `cf buildpacks` on yours and change the `buildpacks:` entries of the two Java apps below if it differs.
-#   - staticfile_buildpack.
+# Prerequisites on the (offline) foundation: an offline-capable Java buildpack that bundles a
+# Java 25 JRE, and the staticfile buildpack (their names are variables - `cf buildpacks`).
 version: 1
 applications:
   - name: client-rag-demo-backend
-    path: ./client-rag-demo-backend-0.0.1-20260825.162146-1.jar
+    path: ((backend-jar))
     buildpacks:
-      - java_buildpack_offline
-    memory: 1500M  # JVM, not the old native image
+      - ((java-buildpack))
+    memory: ((backend-memory))
     instances: 1
     routes:
-      - route: client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com
+      - route: ((backend-route))
     # CF's own health check model doesn't distinguish liveness/readiness the way Kubernetes
     # does (see application.yaml's management.endpoint.health.probes - that split is for a
     # Kubernetes-based platform) - the aggregate endpoint is the right one to point CF at here.
     health-check-type: http
     health-check-http-endpoint: /actuator/health
     # A JVM start (Liquibase migrations included) is slower than the old native image's.
-    timeout: 180
+    timeout: ((startup-timeout))
     env:
       # Activates application-cloud.yaml - cross-origin session cookies (SameSite=None; Secure)
       # and forwarded-headers handling, both required because the frontend and backend are
@@ -57,8 +58,10 @@ applications:
       # Which model is used is decided by which GenAI service is bound, not by a name here: the
       # chat model is the one client-rag-demo-chat grants and the embedding model the one
       # client-rag-demo-embed grants (single-model plans - see services: below). The service names
-      # default to those two in application-cloud.yaml; if yours are named differently set
-      #   APP_GENAI_CHAT_SERVICE / APP_GENAI_EMBEDDING_SERVICE
+      # come from the same ((chat-service)) / ((embed-service)) variables as services: below, so
+      # the binding and the app's lookup of it cannot disagree.
+      APP_GENAI_CHAT_SERVICE: ((chat-service))
+      APP_GENAI_EMBEDDING_SERVICE: ((embed-service))
       # A service on an all-models plan is rejected as ambiguous at startup unless
       #   APP_GENAI_CHAT_MODEL / APP_GENAI_EMBEDDING_MODEL
       # name the model to use. At startup the embedding model's dimension is also checked against
@@ -78,35 +81,35 @@ applications:
       # only lower-probability - 128 gives ~4x margin even assuming that same 2x disagreement
       # repeats. If a document still overflows at this size, that document's content is
       # pathological enough to need its own investigation, not another blanket chunkSize drop.
-      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "128"
-      # Must match the frontend's actual route below exactly (scheme + host, no trailing slash).
-      APP_CORS_ALLOWED_ORIGINS: https://client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "((chunk-size))"
+      # Must match the frontend's route below exactly (scheme + host, no trailing slash) - built
+      # from the same ((frontend-route)) variable, so it always does.
+      APP_CORS_ALLOWED_ORIGINS: https://((frontend-route))
     services:
       # postgres/on-demand-postgres-db. This app needs the pgvector extension available
       # (db/changelog/documents/db.changelog-documents-002.yaml runs `CREATE EXTENSION vector`) -
       # this is VMware Tanzu for Postgres, which generally supports it, but that hasn't been
       # confirmed against this specific instance/plan yet - if the Liquibase migration fails on
       # that CREATE EXTENSION step, that's the first thing to check.
-      - client-rag-demo-db
+      - ((db-service))
       # Two ai-models services, each on a single-model plan, so each one's model is explicit:
-      #   cf create-service ai-models tanzu-gpt-oss-120b client-rag-demo-chat       (CHAT)
-      #   cf create-service ai-models tanzu-nomic-embed-text-v2 client-rag-demo-embed   (EMBEDDING)
+      #   cf create-service ai-models <chat-model-plan>      <chat-service>    (CHAT)
+      #   cf create-service ai-models <embedding-model-plan> <embed-service>   (EMBEDDING, 768 dims)
       # Their endpoints and API keys come from these bindings (java-cfenv), not from vars.yml.
-      - client-rag-demo-chat
-      - client-rag-demo-embed
+      - ((chat-service))
+      - ((embed-service))
 
   - name: client-rag-demo-frontend
-    # Pre-built static bundle (extracted frontend-dist.tar.gz from the frontend-latest release), served as-is. Before
-    # pushing, point it at the real backend route:
-    #   grep -rl __RUNTIME_API_BASE_URL__ frontend-dist | xargs sed -i 's|__RUNTIME_API_BASE_URL__|https://client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com|g'
-    # (use `sed -i ''` on macOS). No Node/npm needed.
-    path: ./frontend-dist
+    # Pre-built static bundle (frontend-dist.tar.gz from the frontend-latest release), served as-is.
+    # Before pushing it must be pointed at the real backend route - ./prepare-frontend.sh does that
+    # from ((backend-route)) (deploy.sh runs it for you). No Node/npm needed.
+    path: ((frontend-dir))
     buildpacks:
-      - staticfile_buildpack
+      - ((staticfile-buildpack))
     memory: 64M
     instances: 1
     routes:
-      - route: client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com
+      - route: ((frontend-route))
 
   - name: client-rag-demo-sharepoint-batch
     # A Spring Cloud Task app (see SharepointBatchApplication's @EnableTask/CLAUDE.md) - runs
@@ -118,13 +121,13 @@ applications:
     # run-task` - is what decides *when*; this app no longer schedules itself internally, unlike
     # its earlier @Scheduled-based design).
     #
-    # Plain executable jar via java_buildpack_offline (no Docker/GHCR access offline).
-    path: ./client-rag-demo-sharepoint-batch-0.0.1-20260825.162031-1.jar
+    # Plain executable jar via the Java buildpack (no Docker/GHCR access offline).
+    path: ((batch-jar))
     buildpacks:
-      - java_buildpack_offline
+      - ((java-buildpack))
     # Used by `cf run-task` too (a task defaults to the app's memory). Document parsing (Tika/POI/
     # PDFBox) on a JVM wants headroom - same size as the backend.
-    memory: 1500M
+    memory: ((batch-memory))
     # Never started as a long-running process - see the note above. `cf run-task` uses the
     # staged droplet directly regardless of this app's own "started"/"stopped" state.
     instances: 0
@@ -145,22 +148,32 @@ applications:
       JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'
       # The jar targets Java 25.
       JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 25.+ } }'
-      # Kept in sync with the backend app's own APP_DOCUMENTS_INGESTION_CHUNK_SIZE above - see its
-      # comment for why this is 128, not the original 256.
-      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "128"
+      # Same ((chunk-size)) variable as the backend's - the two apps write into the same vector_store
+      # against the same embedding model, so they must always agree.
+      APP_DOCUMENTS_INGESTION_CHUNK_SIZE: "((chunk-size))"
       # Real SharePoint/Graph credentials aren't available yet (see CLAUDE.md) - this deployment
       # exercises the pipeline against a mounted rag-docs-volume (block-storage, bound below)
       # instead, standing in for a real SharePoint drive per the client's own suggestion that an
       # NFS-style mount might substitute for SharePoint in some environments. A plain JVM jar picks
       # the source at runtime from this variable (the old native image baked it in at build time).
-      APP_INGESTION_SOURCE: filesystem
+      APP_INGESTION_SOURCE: ((ingestion-source))
+      # Only for ingestion-source: graph (Microsoft Graph / SharePoint). Uncomment these, add the
+      # five variables to vars.yml, and note that the client secret then lives in vars.yml - keep
+      # that file out of version control and off shared drives.
+      # APP_SHAREPOINT_TENANT_ID: ((sharepoint-tenant-id))
+      # APP_SHAREPOINT_CLIENT_ID: ((sharepoint-client-id))
+      # APP_SHAREPOINT_CLIENT_SECRET: ((sharepoint-client-secret))
+      # APP_SHAREPOINT_SITE_ID: ((sharepoint-site-id))
+      # APP_SHAREPOINT_DRIVE_ID: ((sharepoint-drive-id))
       # The volume's mount path (rag-docs-volume, bound below) needs no setting here: CF assigns a
       # GUID-based container path per binding that is only knowable after binding, so the app reads
       # it from its own VCAP_SERVICES (<service>.volume_mounts[].container_dir) at startup -
       # FilesystemVolumeEnvironmentPostProcessor. APP_FILESYSTEM_SOURCE_PATH, if you set it,
-      # overrides that; APP_FILESYSTEM_SOURCE_VOLUME_SERVICE names the binding if yours isn't
-      # called rag-docs-volume.
+      # overrides that. The binding to read is named by the same ((volume-service)) variable as
+      # services: below. Likewise the embedding service this app looks up is ((embed-service)).
+      APP_FILESYSTEM_SOURCE_VOLUME_SERVICE: ((volume-service))
+      APP_GENAI_EMBEDDING_SERVICE: ((embed-service))
     services:
-      - client-rag-demo-db
-      - client-rag-demo-embed
-      - rag-docs-volume
+      - ((db-service))
+      - ((embed-service))
+      - ((volume-service))

@@ -35,7 +35,7 @@ jobs:
   publish-jar:
     name: Publish executable jar to GitHub Packages
     # The jar is the deployable artifact: deploy-cf.yaml builds the same bootJar to cf push, and
-    # an offline client downloads this published one (see manifest-offline.yml).
+    # an offline client downloads this published one (see offline/manifest.yml).
     needs: test
     runs-on: ubuntu-latest
     steps:

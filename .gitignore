@@ -45,3 +45,6 @@ docs/rag_docs/
 # Real service credentials for manifest.yml's ((var)) substitutions - see vars.yml.example for
 # the expected shape. Never committed: these are live database/API credentials.
 /vars.yml
+
+# Site-specific values for offline/manifest.yml (no credentials, but specific to one foundation)
+/offline/vars.yml

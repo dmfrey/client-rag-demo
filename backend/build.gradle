@@ -125,7 +125,7 @@ jacocoTestReport {
 
 // Publishes the executable ("fat") jar bootJar produces to GitHub Packages' Maven registry. This
 // jar is what gets deployed to Cloud Foundry (java_buildpack, see manifest.yml) and what an
-// offline client downloads (see manifest-offline.yml). Reuses the workflow's GITHUB_TOKEN
+// offline client downloads (see offline/manifest.yml). Reuses the workflow's GITHUB_TOKEN
 // (packages:write, granted in backend.yaml) rather than a new secret - GitHub Packages Maven auth
 // is username=actor/password=token, the standard pattern.
 publishing {

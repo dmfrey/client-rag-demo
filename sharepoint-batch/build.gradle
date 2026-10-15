@@ -108,7 +108,7 @@ tasks.named('test') {
 
 // Same rationale as backend/build.gradle's own publishing {} block - publishes the executable jar
 // to GitHub Packages. This jar is what gets deployed to Cloud Foundry (java_buildpack, see
-// manifest.yml) and what an offline client downloads (see manifest-offline.yml).
+// manifest.yml) and what an offline client downloads (see offline/manifest.yml).
 publishing {
     repositories {
         maven {

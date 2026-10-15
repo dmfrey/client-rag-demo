@@ -97,125 +97,23 @@ required-reviewer approval.
 
 ## Deploying in an offline environment
 
-For a foundation/network with no access to GHCR, npm or Maven Central. Uses
-**`manifest-offline.yml`**, which deploys the apps from files rather than images.
-
-### 1. Gather artifacts (on a connected machine)
-
-| Artifact | Where to get it |
-|---|---|
-| `client-rag-demo-backend-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-backend` |
-| `client-rag-demo-sharepoint-batch-<version>.jar` | GitHub Packages (Maven): `com.example:client-rag-demo-sharepoint-batch` |
-| `frontend-dist.tar.gz` | GitHub Release `frontend-latest` (asset built by `frontend-package.yaml`) |
-| `manifest-offline.yml` | this repo |
-
-Packages are SNAPSHOTs, so file names carry a timestamp, e.g.
-`client-rag-demo-backend-0.0.1-20260825.162146-1.jar`. Either rename the files or edit the `path:`
-lines in the manifest to match what you downloaded.
-
-### 2. Foundation prerequisites
-
-- A Java buildpack that bundles a **Java 25** JRE (offline variant), and `staticfile_buildpack`.
-  The manifests name them `java_buildpack_offline` and `staticfile_buildpack`; run `cf buildpacks`
-  and change the `buildpacks:` entries in `manifest-offline.yml` if yours are named differently.
-- A PostgreSQL service instance `client-rag-demo-db` (**with the pgvector extension available**),
-  plus `rag-docs-volume` if using the filesystem source.
-- **Two single-model GenAI services**, one per model, so which model is used is decided by which
-  service you create - not by a model name in a manifest:
-
-  ```bash
-  cf create-service ai-models <chat-model-plan>      client-rag-demo-chat    # a CHAT model
-  cf create-service ai-models <embedding-model-plan> client-rag-demo-embed   # a 768-dimension EMBEDDING model
-  ```
-
-  (On the original foundation these are the `tanzu-gpt-oss-120b` and `tanzu-nomic-embed-text-v2`
-  plans; list yours with `cf marketplace -e ai-models`.) Each binding must expose
-  `credentials.endpoint` with `config_url`, `api_key` and `api_base` - the Tanzu `ai-models`
-  offering does. Each service should grant exactly one model of its kind; a service on an
-  all-models plan is rejected at startup as ambiguous unless you name the model with
-  `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
-- **Bindings, not credentials:** both Java apps find Postgres and their model endpoint(s) themselves
-  from `VCAP_SERVICES` (`java-cfenv`), so there are no service keys to create and nothing to put in a
-  variables file. The backend binds `client-rag-demo-db`, `client-rag-demo-chat` and
-  `client-rag-demo-embed`. `sharepoint-batch` only embeds documents, so it binds
-  `client-rag-demo-db`, `client-rag-demo-embed` and `rag-docs-volume` (no chat service).
-
-### 3. Values you must change
-
-Everything in `manifest-offline.yml` that is specific to the original foundation:
-
-| Setting | Where | Change to |
-|---|---|---|
-| Backend route `client-rag-demo-backend.apps.tas-ndc.kuhn-labs.com` | backend `routes` | your backend FQDN |
-| Frontend route `client-rag-demo-frontend.apps.tas-ndc.kuhn-labs.com` | frontend `routes` | your frontend FQDN |
-| `APP_CORS_ALLOWED_ORIGINS` | backend env | `https://<frontend FQDN>` exactly (scheme + host, no trailing slash) |
-| `APP_DOCUMENTS_INGESTION_CHUNK_SIZE` | backend and batch env | `128` is tuned for a 512-token embedding limit; adjust to your model, keep both apps equal |
-| Service names `client-rag-demo-db`, `client-rag-demo-chat`, `client-rag-demo-embed`, `rag-docs-volume` | `services:` | your service instance names. If the chat/embedding services are named differently, also set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE` on the backend and `APP_GENAI_EMBEDDING_SERVICE` on `sharepoint-batch` |
-| `APP_INGESTION_SOURCE` | batch env | `filesystem` (current) or `graph` |
-| `APP_FILESYSTEM_SOURCE_VOLUME_SERVICE` | batch env (optional) | only if your block-storage service isn't named `rag-docs-volume`. The mount path itself is read from the binding automatically - nothing to look up or copy after a fresh bind |
-| Graph settings (`APP_SHAREPOINT_TENANT_ID`, `_CLIENT_ID`, `_CLIENT_SECRET`, `_SITE_ID`, `_DRIVE_ID`) | batch env | only if `APP_INGESTION_SOURCE=graph`; not in the manifest by default — add them |
-| jar `path:` values | backend, batch | the actual downloaded file names |
-| `memory` | backend (1500M) | tune for the JVM; staging or running a JVM app can need more memory than expected |
-
-> **Embedding model dimension.** The pgvector column is `vector(768)`, fixed by the Liquibase
-> schema; nothing in a manifest states it. At startup the backend reads the column's dimension
-> back from the database, asks the embedding model for a test vector and **refuses to start** if
-> the two differ, naming both numbers - so a wrong embedding service shows up immediately, not on
-> the first upload. Using a model with a different dimension requires a schema migration and a
-> full reindex. The chat model can be changed freely (swap the service).
-
-### 4. Prepare the frontend
-
-The frontend bundle is built with a placeholder backend URL. Replace it with your backend route
-before pushing (no Node/npm required):
+For a foundation/network with no access to GHCR, npm or Maven Central. The **`offline/`** folder is
+self-contained: copy it onsite, add the two jars (GitHub Packages) and the frontend bundle (GitHub
+Release `frontend-latest`), then:
 
 ```bash
-mkdir -p frontend-dist && tar -xzf frontend-dist.tar.gz -C frontend-dist
-grep -rl __RUNTIME_API_BASE_URL__ frontend-dist | xargs sed -i \
-  's|__RUNTIME_API_BASE_URL__|https://<your backend FQDN>|g'      # macOS: sed -i ''
+cd offline
+cp vars.yml.example vars.yml && $EDITOR vars.yml   # routes, jar names, buildpacks, service names...
+./deploy.sh frontend-dist.tar.gz                   # prepares the frontend, runs checks, cf push
 ```
 
-Because the frontend and backend are separate origins, the backend runs with the `cloud` profile
-(`SameSite=None; Secure` cookies, forwarded headers) — this is already set in the manifest, and
-requires both routes to be HTTPS.
-
-### 5. Deploy
-
-```
-.
-├── manifest-offline.yml
-├── client-rag-demo-backend-<version>.jar
-├── client-rag-demo-sharepoint-batch-<version>.jar
-└── frontend-dist/
-```
-
-```bash
-cf push -f manifest-offline.yml
-```
-
-Push the backend **first and let it start**: it runs the Liquibase migrations, and
-`sharepoint-batch` must never run against a database the backend has not migrated at least once.
-Then trigger ingestion on demand or from a scheduler:
-
-```bash
-cf run-task client-rag-demo-sharepoint-batch
-```
-
-### Offline caveats
-
-- A JVM backend start (with Liquibase migrations) is slow; the manifest allows 180s for the health check - raise `timeout` if your foundation is slower.
-- `java_buildpack` staging has previously been OOM-killed (exit 137) on some cells; retry or
-  raise staging memory if it recurs.
-- Both Java apps set `JBP_CONFIG_JAVA_CF_ENV: '{enabled: false}'`. For the backend this stops
-  `java_buildpack` injecting a second copy of `java-cfenv` next to the one bundled in the jar; for
-  sharepoint-batch it avoids the buildpack's own datasource rebinding. Keep it.
-- Backend and sharepoint-batch startup failures that name a GenAI service and say what to fix:
-  - "No bound service named '...'" - the service isn't in the manifest's `services:` or is named
-    differently; set `APP_GENAI_CHAT_SERVICE` / `APP_GENAI_EMBEDDING_SERVICE`.
-  - "grants N CHAT/EMBEDDING models" - the service is on an all-models plan; bind a single-model
-    plan, or name the model with `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
-  - "returns N-dimension vectors but vector_store.embedding is vector(768)" - the embedding service
-    grants a model of a different dimension (see above).
+Everything that differs between sites is a `((variable))` in `offline/manifest.yml`, set in
+`vars.yml`; values that must agree (the frontend route and the backend's CORS origin; a service's
+name and the app's lookup of it) are driven by one variable each. `offline/preflight.sh` checks the
+variables, files, buildpacks, services and route domains before anything is pushed. There are no
+credentials to configure - the apps read Postgres and their model endpoints from their service
+bindings. See **[`offline/README.md`](offline/README.md)** for the prerequisites (including the two
+single-model GenAI services), the full variable reference and troubleshooting.
 
 ## CI/CD
 
