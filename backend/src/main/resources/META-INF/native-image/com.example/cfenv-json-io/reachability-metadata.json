@@ -1,0 +1,76 @@
+{
+  "reflection": [
+    {
+      "type": "boolean[]"
+    },
+    {
+      "type": "boolean[][]"
+    },
+    {
+      "type": "boolean[][][]"
+    },
+    {
+      "type": "byte[]"
+    },
+    {
+      "type": "byte[][]"
+    },
+    {
+      "type": "byte[][][]"
+    },
+    {
+      "type": "short[]"
+    },
+    {
+      "type": "short[][]"
+    },
+    {
+      "type": "short[][][]"
+    },
+    {
+      "type": "int[]"
+    },
+    {
+      "type": "int[][]"
+    },
+    {
+      "type": "int[][][]"
+    },
+    {
+      "type": "long[]"
+    },
+    {
+      "type": "long[][]"
+    },
+    {
+      "type": "long[][][]"
+    },
+    {
+      "type": "float[]"
+    },
+    {
+      "type": "float[][]"
+    },
+    {
+      "type": "float[][][]"
+    },
+    {
+      "type": "double[]"
+    },
+    {
+      "type": "double[][]"
+    },
+    {
+      "type": "double[][][]"
+    },
+    {
+      "type": "char[]"
+    },
+    {
+      "type": "char[][]"
+    },
+    {
+      "type": "char[][][]"
+    }
+  ]
+}

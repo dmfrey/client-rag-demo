@@ -23,6 +23,7 @@ repositories {
 ext {
 	set('datasourceMicrometerVersion', "2.2.1")
 	set('springAiVersion', "2.0.1")
+	set('cfenvVersion', "4.0.2")
 }
 
 dependencies {
@@ -53,6 +54,14 @@ dependencies {
 	implementation 'org.springframework.ai:spring-ai-starter-model-openai'
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-vector-store-advisor'
+
+	// Cloud Foundry service binding support (spike): java-cfenv-boot sets spring.datasource.* from
+	// the bound Postgres service in VCAP_SERVICES; the tanzu-genai module registers a GenaiLocator
+	// (genai.locator.*) that lists the models the bound ai-models instance grants, so models are
+	// chosen by name at startup instead of passing the proxy URL/API key through vars.yml. Both are
+	// inert when VCAP_SERVICES is absent (local dev, tests).
+	implementation "io.pivotal.cfenv:java-cfenv-boot:${cfenvVersion}"
+	implementation "io.pivotal.cfenv:java-cfenv-boot-tanzu-genai:${cfenvVersion}"
 
 	// Observability dependencies
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
@@ -141,6 +150,16 @@ publishing {
 			artifactId = 'client-rag-demo-backend'
 		}
 	}
+}
+
+// Spring AOT evaluates @ConditionalOnProperty and profile-specific properties once, at build
+// time, and bakes the result into the native image. There is no VCAP_SERVICES at build time, so
+// without these the GenaiLocator (java-cfenv-boot-tanzu-genai) and GenaiModelConfiguration would
+// be excluded from the image entirely, and the `cloud` profile's spring.ai.model.*=none switches
+// wouldn't apply. The placeholder URL is never used - at runtime java-cfenv sets the real value
+// from the bound service and the bean reads it from the Environment then.
+tasks.named('processAot') {
+	args('--spring.profiles.active=cloud', '--genai.locator.config-url=set-at-runtime-from-vcap-services')
 }
 
 tasks.named('bootBuildImage') {

@@ -15,3 +15,19 @@ server:
         # than derived, since Gorouter's TLS termination always makes this true in practice.
         same-site: none
         secure: true
+
+spring:
+  ai:
+    # On Cloud Foundry the chat and embedding models come from the bound GenAI service via
+    # GenaiModelConfiguration (java-cfenv's GenaiLocator), not from spring.ai.openai.*
+    # autoconfiguration - so every OpenAI autoconfig is switched off. Besides the two models this
+    # app doesn't build here, the unused audio/image/moderation ones would otherwise fail
+    # startup demanding an API key that nothing sets.
+    model:
+      chat: none
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none

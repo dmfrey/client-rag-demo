@@ -1,5 +1,6 @@
 package com.example.clientragdemo;
 
+import com.example.clientragdemo.configuration.CfEnvRuntimeHints;
 import com.example.clientragdemo.configuration.LiquibaseRuntimeHints;
 import com.example.clientragdemo.configuration.OpenAiRuntimeHints;
 import com.example.clientragdemo.ingestion.configuration.PdfBoxRuntimeHints;
@@ -10,7 +11,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-@ImportRuntimeHints({ LiquibaseRuntimeHints.class, OpenAiRuntimeHints.class, PdfBoxRuntimeHints.class, PoiRuntimeHints.class, XmlBeansRuntimeHints.class })
+@ImportRuntimeHints({ LiquibaseRuntimeHints.class, OpenAiRuntimeHints.class, PdfBoxRuntimeHints.class, CfEnvRuntimeHints.class, PoiRuntimeHints.class, XmlBeansRuntimeHints.class })
 public class ClientRagDemoApplication {
 
 	public static void main(String[] args) {
