@@ -169,12 +169,23 @@ Edit `vars.yml` and run `./deploy.sh`. To change `backend-route`, pass the tarba
     plan, or name the model with `APP_GENAI_CHAT_MODEL` / `APP_GENAI_EMBEDDING_MODEL`.
   - "returns N-dimension vectors but vector_store.embedding is vector(768)" - the embedding
     service grants a model of a different dimension.
+- **Image / scanned PDF uploads end `FAILED`:** the message says why - "need a vision model, and none
+  is configured" (`vision-service` not set, or `./enable-vision.sh` not run), "grants no VISION
+  model" (the service's model cannot see - pick another plan), "limited to N pages" (raise
+  `APP_DOCUMENTS_INGESTION_VISION_MAX_PAGES` or split the file). See
+  [Reading images and scanned PDFs](#reading-images-and-scanned-pdfs).
 - **`NoClassDefFoundError` for a Redis class** - nothing in these jars uses Redis (checked: no
   Redis library and no reference to `RedisConnectionFactory`). Look at the buildpack's
   Spring auto-reconfiguration (`JBP_CONFIG_SPRING_AUTO_RECONFIGURATION: '{enabled: false}'`) and at
   any Redis service bound to the app.
 
 ## Reading images and scanned PDFs
+
+**This is optional, and the deployment is complete without it.** If the foundation has no
+vision-capable model, leave `vision-service` empty and skip this section: nothing is bound,
+nothing extra is needed in the carry-in folder, and the only difference is that image files and
+scanned PDFs fail ingestion (status `FAILED`, with a message saying a vision model is needed)
+instead of being read. Text, Word and text-layer PDFs are unaffected.
 
 Text files, Word (`.doc`, `.docx`) and PDFs with a text layer need nothing extra. A **scanned PDF**
 (pages that are pictures) or an **image file** has no text for the parser to find, so reading it
@@ -196,7 +207,13 @@ both, so later deploys do not undo it. With `vision-service` empty none of this 
   sample of your own documents before relying on it.
 - Only a PDF with **no** text at all goes through the model. A PDF mixing text pages and scanned
   pages is indexed from its text pages only.
+- `cf marketplace` does not show model capabilities, so you only find out whether a plan's model can
+  see by using it. It is safe to try: a service with no `VISION` model does **not** stop the
+  backend - it starts normally, logs a warning, and image / scanned-PDF uploads fail with
+  "Vision service '...' grants no VISION model" in the document's error. Unbind it (below) if so.
+- The frontend lists image types in its file picker whether or not vision is on; without it those
+  uploads simply end `FAILED` with the message above.
 - The service must be on a plan whose model lists `VISION`; a service with several such models needs
-  `APP_GENAI_VISION_MODEL` to name one. Startup fails if the named service grants no vision model.
+  `APP_GENAI_VISION_MODEL` to name one (startup fails otherwise, like the chat and embedding services).
 - To turn it off: `cf unset-env <app> APP_GENAI_VISION_SERVICE` and `cf unbind-service <app> <service>`
   for the backend and the batch job, then restart the backend, and clear `vision-service` in `vars.yml`.

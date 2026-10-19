@@ -1,6 +1,7 @@
 package com.example.clientragdemo.ingestion.configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,12 +34,26 @@ class GenaiVisionConfigurationTest {
     }
 
     @Test
-    void failsStartupWhenTheServiceGrantsNoVisionModel() {
+    void aServiceWithoutAVisionModelDoesNotStopTheAppButFailsDocumentsClearly() {
         GenaiLocator textOnly = mock(GenaiLocator.class);
         when(textOnly.getModelNamesByCapability("VISION")).thenReturn(List.of());
 
         runner.withPropertyValues("app.genai.vision-service=chat-only")
                 .withBean(GenaiLocatorFactory.class, () -> name -> textOnly)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThatThrownBy(() -> context.getBean(TranscribeImagePort.class).transcribe(new byte[] {1}, "image/png"))
+                            .hasMessageContaining("grants no VISION model");
+                });
+    }
+
+    @Test
+    void aServiceGrantingSeveralVisionModelsStillNeedsOneNamed() {
+        GenaiLocator many = mock(GenaiLocator.class);
+        when(many.getModelNamesByCapability("VISION")).thenReturn(List.of("a", "b"));
+
+        runner.withPropertyValues("app.genai.vision-service=many")
+                .withBean(GenaiLocatorFactory.class, () -> name -> many)
                 .run(context -> assertThat(context).hasFailed());
     }
 

@@ -33,7 +33,8 @@ staticfile-buildpack: staticfile_buildpack
 db-service: client-rag-demo-db
 chat-service: client-rag-demo-chat
 embed-service: client-rag-demo-embed
-# --- OPTIONAL: a third GenAI service whose model supports VISION, so image files (.png .jpg .gif) and
+# --- OPTIONAL - skip it if the foundation has no vision model; everything else works without it.
+# --- A third GenAI service whose model supports VISION, so image files (.png .jpg .gif) and
 # --- scanned PDFs can be read. Leave empty to keep it off (such files then fail ingestion with a
 # --- clear message). deploy.sh binds it after the push (./enable-vision.sh does it on its own).
 # ---   cf create-service ai-models <vision-model-plan> <vision-service>

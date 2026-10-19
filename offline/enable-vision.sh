@@ -12,6 +12,9 @@
 # feature on (without that setting the apps have no vision model and image/scanned files simply fail
 # ingestion with a clear message). `cf push` keeps both, so later deploys do not undo it.
 #
+# A service whose plan has no VISION model does not stop the backend: it starts, logs a warning, and
+# images / scanned PDFs fail with a message saying the service grants no VISION model.
+#
 # To turn it off again:
 #   cf unset-env client-rag-demo-backend APP_GENAI_VISION_SERVICE && cf unbind-service client-rag-demo-backend <service>
 #   (same for client-rag-demo-sharepoint-batch), then restart the backend.
@@ -35,4 +38,9 @@ for app in $apps; do
 done
 # The backend is running; the batch job (instances 0) just picks it up on its next task.
 echo "Restarting client-rag-demo-backend to pick up the binding"
-cf restart client-rag-demo-backend
+if ! cf restart client-rag-demo-backend; then
+  echo >&2
+  echo "The backend did not come back up. To undo vision and recover:" >&2
+  echo "  cf unset-env client-rag-demo-backend APP_GENAI_VISION_SERVICE && cf restart client-rag-demo-backend" >&2
+  exit 1
+fi
