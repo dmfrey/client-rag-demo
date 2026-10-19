@@ -273,6 +273,7 @@ config, since this module has no `@SpringBootApplication` of its own to auto-sca
   below) rather than double-defining that one bean, which otherwise fails outright with
   `BeanDefinitionOverrideException` under AOT's stricter bean-registration pass (caught by
   `:backend:processTestAot`, not assumed).
+- **Supported types: PDF, DOC, DOCX, TXT** (`ContentType` is only an allow-list - Tika auto-detects the format; legacy `.doc` goes through POI via Tika's Microsoft module). There is **no OCR** (Tika needs a Tesseract binary), so `DocumentIndexingAdapter` throws when nothing extractable comes out - a scanned/image-only file ends up `FAILED` with a clear message instead of `READY` with zero chunks. Images (`.jpg`/`.png`/`.gif`) are deliberately unsupported for the same reason.
 - **`documents-004` makes `uploaded_by` nullable** — it was `NOT NULL` from the original
   web-upload-only design (`documents-001`), before `SOURCE_SHAREPOINT`/other automated-ingestion
   rows existed; those legitimately have no human uploader. Caught by `IngestDocumentServiceIT`

@@ -2,7 +2,7 @@ package com.example.clientragdemo.ingestion.application.domain.model;
 
 public enum ContentType {
 
-    PDF, DOCX, TXT;
+    PDF, DOC, DOCX, TXT;
 
     public static ContentType fromFilename(String filename) {
         if (filename == null) {
@@ -17,6 +17,7 @@ public enum ContentType {
         String extension = filename.substring(lastDot + 1).toLowerCase();
         return switch (extension) {
             case "pdf" -> PDF;
+            case "doc" -> DOC;
             case "docx" -> DOCX;
             case "txt" -> TXT;
             default -> throw new IllegalArgumentException("Unsupported file type: " + filename);

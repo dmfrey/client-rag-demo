@@ -90,4 +90,33 @@ class IngestDocumentServiceIT {
                 .orElseThrow();
         assertThat(foundByExternalId.id()).isEqualTo(created.id());
     }
+
+    @Test
+    void ingestsALegacyDocFile() throws Exception {
+        byte[] content = getClass().getResourceAsStream("/fixtures/legacy.doc").readAllBytes();
+        Instant now = Instant.now();
+        Document created = saveDocumentPort.save(new Document(
+                null, "legacy.doc", ContentType.DOC, DocumentStatus.PROCESSING, null, null,
+                "test-user", Document.SOURCE_UPLOAD, null, null, now, now));
+
+        ingestDocumentUseCase.execute(new IngestDocumentCommand(created.id(), created.filename(), content, ContentType.DOC));
+
+        Document ready = loadDocumentByIdPort.loadById(created.id()).orElseThrow();
+        assertThat(ready.status()).isEqualTo(DocumentStatus.READY);
+        assertThat(ready.chunkCount()).isGreaterThan(0);
+    }
+
+    @Test
+    void failsAFileWithNoExtractableText() {
+        Instant now = Instant.now();
+        Document created = saveDocumentPort.save(new Document(
+                null, "blank.txt", ContentType.TXT, DocumentStatus.PROCESSING, null, null,
+                "test-user", Document.SOURCE_UPLOAD, null, null, now, now));
+
+        ingestDocumentUseCase.execute(new IngestDocumentCommand(created.id(), created.filename(), "   \n ".getBytes(StandardCharsets.UTF_8), ContentType.TXT));
+
+        Document failed = loadDocumentByIdPort.loadById(created.id()).orElseThrow();
+        assertThat(failed.status()).isEqualTo(DocumentStatus.FAILED);
+        assertThat(failed.errorMessage()).contains("No text could be extracted");
+    }
 }

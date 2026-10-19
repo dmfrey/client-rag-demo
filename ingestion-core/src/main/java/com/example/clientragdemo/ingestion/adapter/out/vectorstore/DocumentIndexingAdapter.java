@@ -40,6 +40,14 @@ class DocumentIndexingAdapter implements IndexDocumentChunksPort, DeleteDocument
 
         List<org.springframework.ai.document.Document> parsed = new TikaDocumentReader(resource).get();
 
+        // Tika has no OCR here (it needs a Tesseract binary), so an image-only/scanned PDF parses
+        // to nothing. Fail loudly rather than mark a document READY with zero chunks.
+        boolean hasText = parsed.stream().anyMatch(document -> document.getText() != null && !document.getText().isBlank());
+        if (!hasText) {
+            throw new IllegalStateException("No text could be extracted from " + filename
+                    + " (a scanned or image-only file needs OCR, which is not supported)");
+        }
+
         Map<String, Object> metadata = Map.of("document_id", documentId, "filename", filename);
         List<org.springframework.ai.document.Document> tagged = parsed.stream()
                 .map(document -> new org.springframework.ai.document.Document(document.getText(), metadata))
@@ -49,6 +57,10 @@ class DocumentIndexingAdapter implements IndexDocumentChunksPort, DeleteDocument
                 .withChunkSize(ingestionProperties.chunkSize())
                 .build()
                 .apply(tagged);
+
+        if (chunks.isEmpty()) {
+            throw new IllegalStateException("No text chunks were produced from " + filename);
+        }
 
         vectorStore.add(chunks);
 

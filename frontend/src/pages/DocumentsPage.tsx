@@ -7,7 +7,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import type { Document } from "../api/types";
 
 const MAX_CONCURRENT_UPLOADS = 10;
-const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".txt"];
+const ACCEPTED_EXTENSIONS = [".pdf", ".doc", ".docx", ".txt"];
 
 interface PendingConfirmation {
   title: string;
@@ -61,7 +61,7 @@ export function DocumentsPage() {
     if (!file) return;
 
     if (!hasAcceptedExtension(file.name)) {
-      setUploadError("Only PDF, Word (.docx), and text (.txt) files are supported.");
+      setUploadError("Only PDF, Word (.doc, .docx), and text (.txt) files are supported.");
       return;
     }
 
