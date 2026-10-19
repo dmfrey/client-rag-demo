@@ -54,4 +54,14 @@ else
   echo
   echo "Batch job not deployed. Add it later with ./deploy.sh --with-batch (or set deploy-batch: true)."
 fi
+# Optional vision model (images / scanned PDFs): bound with cf commands after the push, because a
+# manifest cannot bind a service conditionally. Skipped when vision-service is empty.
+if [ -n "$(get_var vision-service)" ]; then
+  echo
+  if [ -n "$dry_run" ]; then
+    echo "bash ./enable-vision.sh   (binds $(get_var vision-service) and restarts the backend)"
+  else
+    bash ./enable-vision.sh
+  fi
+fi
 [ -z "$dry_run" ] || echo "(dry run: nothing was pushed)"

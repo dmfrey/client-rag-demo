@@ -38,6 +38,7 @@ tasks.withType(JavaCompile).configureEach {
 ext {
     set('springAiVersion', "2.0.1")
     set('cfenvVersion', "4.0.2")
+    set('pdfboxVersion', "3.0.7")
 }
 
 // io.spring.dependency-management (not the org.springframework.boot plugin, which would force a
@@ -74,6 +75,9 @@ dependencies {
     api 'org.springframework.ai:spring-ai-model'
     api 'org.springframework.ai:spring-ai-vector-store'
     implementation 'org.springframework.ai:spring-ai-tika-document-reader'
+    // Renders scanned-PDF pages for the optional vision model (PdfPageRenderer). Same version Tika
+    // already brings in transitively, declared so it is a direct, visible dependency.
+    implementation "org.apache.pdfbox:pdfbox:${pdfboxVersion}"
 
     // Cloud Foundry service bindings, shared by backend and sharepoint-batch (see
     // GenaiBindingsConfiguration): java-cfenv-boot-tanzu-genai provides DefaultGenaiLocator (lists

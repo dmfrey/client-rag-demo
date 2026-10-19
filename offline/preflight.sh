@@ -99,6 +99,11 @@ else
   check_service db-service "PostgreSQL with the pgvector extension"
   check_service chat-service "a CHAT model"
   check_service embed-service "a 768-dimension EMBEDDING model"
+  if [ -n "$(get_var vision-service)" ]; then
+    check_service vision-service "a VISION-capable CHAT model (optional: images and scanned PDFs)"
+  else
+    echo "  info  vision: off (set vision-service in vars.yml to read images and scanned PDFs)"
+  fi
   if [ "$batch" = true ] && [ "$(get_var ingestion-source)" = "filesystem" ]; then
     check_service volume-service "the document volume"
   fi

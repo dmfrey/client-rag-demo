@@ -94,7 +94,7 @@ describe("DocumentsPage upload confirmation", () => {
     renderPage();
     await screen.findByText("report.pdf");
 
-    // Via the file input, the browser's own accept=".pdf,.doc,.docx,.txt" filtering (which
+    // Via the file input, the browser's own accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.gif" filtering (which
     // userEvent.upload respects) would stop this before it ever reaches handleFiles - drag-and-drop
     // has no such restriction, so that's the real path an unsupported file can take.
     fireEvent.drop(screen.getByTestId("dropzone"), {

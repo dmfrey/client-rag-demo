@@ -2,7 +2,23 @@ package com.example.clientragdemo.ingestion.application.domain.model;
 
 public enum ContentType {
 
-    PDF, DOC, DOCX, TXT;
+    PDF, DOC, DOCX, TXT, PNG, JPEG, GIF;
+
+    public boolean isImage() {
+        return this == PNG || this == JPEG || this == GIF;
+    }
+
+    public String mimeType() {
+        return switch (this) {
+            case PNG -> "image/png";
+            case JPEG -> "image/jpeg";
+            case GIF -> "image/gif";
+            case PDF -> "application/pdf";
+            case DOC -> "application/msword";
+            case DOCX -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case TXT -> "text/plain";
+        };
+    }
 
     public static ContentType fromFilename(String filename) {
         if (filename == null) {
@@ -20,6 +36,9 @@ public enum ContentType {
             case "doc" -> DOC;
             case "docx" -> DOCX;
             case "txt" -> TXT;
+            case "png" -> PNG;
+            case "jpg", "jpeg" -> JPEG;
+            case "gif" -> GIF;
             default -> throw new IllegalArgumentException("Unsupported file type: " + filename);
         };
     }

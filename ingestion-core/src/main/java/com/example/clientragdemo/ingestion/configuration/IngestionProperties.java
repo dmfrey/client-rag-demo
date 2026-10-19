@@ -10,4 +10,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 // app.ingestion) across this class's move/rename into ingestion-core so backend's already-deployed
 // APP_DOCUMENTS_INGESTION_CHUNK_SIZE env var keeps working unchanged.
 @ConfigurationProperties(prefix = "app.documents.ingestion")
-public record IngestionProperties(@DefaultValue("800") int chunkSize) {}
+public record IngestionProperties(@DefaultValue("800") int chunkSize,
+        // Scanned PDFs are read page by page through the vision model (one call per page), so this
+        // bounds the cost/time of a single document. Larger scans fail with a clear message.
+        @DefaultValue("100") int visionMaxPages) {}

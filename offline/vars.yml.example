@@ -33,6 +33,11 @@ staticfile-buildpack: staticfile_buildpack
 db-service: client-rag-demo-db
 chat-service: client-rag-demo-chat
 embed-service: client-rag-demo-embed
+# --- OPTIONAL: a third GenAI service whose model supports VISION, so image files (.png .jpg .gif) and
+# --- scanned PDFs can be read. Leave empty to keep it off (such files then fail ingestion with a
+# --- clear message). deploy.sh binds it after the push (./enable-vision.sh does it on its own).
+# ---   cf create-service ai-models <vision-model-plan> <vision-service>
+vision-service: ""
 
 # --- Tuning. chunk-size is shared by the backend and the batch job (they write into the same vector
 # --- store). 128 suits an embedding model with a 512-token limit; lower it if documents fail to

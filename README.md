@@ -24,7 +24,7 @@ pgvector.
   no roles). Profile update and password change.
 - **Consent banner**: a configurable banner each session must acknowledge before any other API
   call succeeds (enforced server-side, HTTP 428 otherwise).
-- **Documents**: upload PDF, DOCX and TXT (up to 50 MB). Re-uploading a filename replaces the
+- **Documents**: upload PDF, DOC/DOCX and TXT (up to 50 MB), plus images (PNG/JPG/GIF) and scanned PDFs when the optional vision model is bound (see offline/README.md). Re-uploading a filename replaces the
   existing document. Ingestion is asynchronous: parse (Apache Tika) → chunk → embed → store in
   pgvector, with status `PROCESSING` / `READY` / `FAILED`. Delete removes the chunks too. One
   shared knowledge base for all users.
